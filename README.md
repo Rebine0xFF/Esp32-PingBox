@@ -1,15 +1,23 @@
 # ESP32 PingBox
 
 
-![Platform](https://img.shields.io/badge/Platform-ESP32-red?style=for-the-badge&logo=espressif) ![Language](https://img.shields.io/badge/Language-C%2B%2B%20%2F%20Arduino-00979D?style=for-the-badge&logo=arduino) ![GitHub License](https://img.shields.io/github/license/Rebine0xFF/Esp32-PingBox?style=for-the-badge)
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-ESP32-red?style=for-the-badge&logo=espressif" alt="Platform">
+  <img src="https://img.shields.io/badge/Language-C%2B%2B%20%2F%20Arduino-00979D?style=for-the-badge&logo=arduino" alt="Language">
+  <img src="https://img.shields.io/github/license/Rebine0xFF/Esp32-PingBox?style=for-the-badge" alt="GitHub License">
+</p>
 
-![Status](https://img.shields.io/badge/Status-In_Progress-orange?style=for-the-badge)
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-In_Progress-orange?style=for-the-badge" alt="Status">
+</p>
 
-![GitHub last commit](https://img.shields.io/github/last-commit/Rebine0xFF/Esp32-PingBox?style=flat-square)
-![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/Rebine0xFF/Esp32-PingBox)
-![GitHub top language](https://img.shields.io/github/languages/top/Rebine0xFF/Esp32-PingBox?style=flat-square)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/Rebine0xFF/Esp32-PingBox?style=flat-square)
-![Smoke](https://img.shields.io/badge/Voltage_Regulators_Destroyed-1-orange?style=flat-square&logo=firefoxbrowser)
+<p align="center">
+  <img src="https://img.shields.io/github/last-commit/Rebine0xFF/Esp32-PingBox?style=flat-square" alt="GitHub last commit">
+  <img src="https://img.shields.io/github/languages/code-size/Rebine0xFF/Esp32-PingBox" alt="GitHub code size in bytes">
+  <img src="https://img.shields.io/github/languages/top/Rebine0xFF/Esp32-PingBox?style=flat-square" alt="GitHub top language">
+  <img src="https://img.shields.io/github/commit-activity/m/Rebine0xFF/Esp32-PingBox?style=flat-square" alt="GitHub commit activity">
+  <img src="https://img.shields.io/badge/Voltage_Regulators_Destroyed-1-orange?style=flat-square&logo=firefoxbrowser" alt="Smoke">
+</p>
 
 *Hero img here*
 
