@@ -1,6 +1,7 @@
 #include "display/screen_info.h"
 #include "display/screen_info_data.h"
 #include "config.h"
+#include <Arduino.h>
 #include <U8g2lib.h>
 
 
@@ -15,9 +16,9 @@ static U8G2_SH1106_128X64_NONAME_F_SW_I2C display(
 
 void screenInfoInit() {
     display.begin();
-    display.setBusClock(100000);
-    display.setContrast(180);
     display.clearDisplay();
+    display.clearBuffer();
+    display.sendBuffer();
 }
 
 // ------------------------------------------------------------
@@ -111,18 +112,16 @@ static void _drawContent() {
     display.drawXBM(72, 44, 15, 16, image_LAST_ACTION_ICON_bits);
 
     // WIFI STATUS
-    display.drawXBM(27, 50, 9, 6, image_WIFI_STATUS_bits);
+    display.drawXBM(27, 50, image_WIFI_STATUS_bits->w, image_WIFI_STATUS_bits->h, image_WIFI_STATUS_bits->data);
 
     // SERVER STATUS
-    display.drawXBM(42, 41, 9, 6, image_SERVER_STATUS_bits);
+    display.drawXBM(42, 41, image_SERVER_STATUS_bits->w, image_SERVER_STATUS_bits->h, image_SERVER_STATUS_bits->data);
 
     // WIFI ICON
     display.drawXBM(2, 22, 19, 16, image_WIFI_ICON_bits);
 
     // STATUS FACE
     display.drawXBM(33, 22, 29, 14, image_STATUS_FACE_bits);
-
-    display.sendBuffer();
     // [END lopaka generated]
 
 }
@@ -130,5 +129,20 @@ static void _drawContent() {
 // ------------------------------------------------------------
 
 void screenInfoUpdate() {
-
+    display.clearBuffer();
+    _drawContent();
+    display.sendBuffer();
+    // Test loop: cycle through statuses
+    static uint8_t _test_state = 0;
+    static unsigned long _last_change = 0;
+    const unsigned long _interval_ms = 3000;
+    unsigned long _now = millis();
+    if ((_now - _last_change) >= _interval_ms) {
+        _last_change = _now;
+        Status wifi = static_cast<Status>(_test_state % 3);
+        Status server = static_cast<Status>((_test_state + 1) % 3);
+        setWifiStatus(wifi);
+        setServerStatus(server);
+        _test_state++;
+    }
 }
