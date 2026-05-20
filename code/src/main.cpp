@@ -22,5 +22,6 @@ void setup() {
 
 void loop() {
     screenInfoUpdate();
+    screenMainUpdate(30, 19, 0);   // 30 min sélectionnées, il est 19h00 → affiche "→ 19h30"
     delay(3000);
 }
