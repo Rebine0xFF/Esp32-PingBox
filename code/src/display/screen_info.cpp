@@ -132,17 +132,4 @@ void screenInfoUpdate() {
     display.clearBuffer();
     _drawContent();
     display.sendBuffer();
-    // Test loop: cycle through statuses
-    static uint8_t _test_state = 0;
-    static unsigned long _last_change = 0;
-    const unsigned long _interval_ms = 3000;
-    unsigned long _now = millis();
-    if ((_now - _last_change) >= _interval_ms) {
-        _last_change = _now;
-        Status wifi = static_cast<Status>(_test_state % 3);
-        Status server = static_cast<Status>((_test_state + 1) % 3);
-        setWifiStatus(wifi);
-        setServerStatus(server);
-        _test_state++;
-    }
 }
