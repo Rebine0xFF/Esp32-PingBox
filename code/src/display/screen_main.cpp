@@ -154,14 +154,14 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
                          CENTER_X,     17);                          // petite flèche vers la roue
 
     display.setDrawColor(0);   // texte en noir sur fond blanc
-    display.drawStr(CENTER_X - sw / 2, 11, str_buf);
+    display.drawStr(CENTER_X - sw / 2, 12, str_buf);
     display.setDrawColor(1);
 
     // --- Heure de fin ---
     display.setFont(u8g2_font_profont10_tr);
     snprintf(str_buf, sizeof(str_buf), "-> %dh%02d", end_hour, end_minute);
     sw = display.getStrWidth(str_buf);
-    display.drawStr(CENTER_X - sw / 2, 28, str_buf);   // sous la flèche, centré
+    display.drawStr(73, 23, str_buf);
 
     display.sendBuffer();
 }

@@ -2,6 +2,7 @@
 
 #include "display/screen_main.h"
 #include "display/screen_info.h"
+#include "input/encoder.h"
 
 
 
@@ -13,7 +14,7 @@ void setup() {
 
     screenMainInit();
     screenInfoInit();
-
+    encoderInit();
 }
 
 // ============================================================
@@ -21,7 +22,12 @@ void setup() {
 // ============================================================
 
 void loop() {
-    screenInfoUpdate();
-    screenMainUpdate(30, 19, 0);   // 30 min sélectionnées, il est 19h00 → affiche "→ 19h30"
-    delay(3000);
+
+    int duration = encoderGetMinutes();
+    // Replace by NTP or RTC soon
+    int current_hour   = 19;
+    int current_minute = 0;
+
+    screenMainUpdate(duration, current_hour, current_minute);
+    // screenInfoUpdate();
 }
