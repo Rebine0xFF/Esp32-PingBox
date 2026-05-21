@@ -3,6 +3,7 @@
 #include "display/screen_main.h"
 #include "display/screen_info.h"
 #include "input/encoder.h"
+#include "input/buttons.h"
 
 
 
@@ -15,6 +16,7 @@ void setup() {
     screenMainInit();
     screenInfoInit();
     encoderInit();
+    buttonsInit();
 }
 
 // ============================================================
