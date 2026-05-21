@@ -19,10 +19,18 @@ void encoderInit() {
 
     // On initialise le compteur à la valeur par défaut
     enc.setCount(_duration_minutes);
+
+    pinMode(PIN_ENC_SW, INPUT_PULLUP);
 }
 
 
 int encoderGetMinutes() {
+
+    if (digitalRead(PIN_ENC_SW) == LOW) {
+    enc.setCount(0);
+    }
+
+
 
     int raw = (int)enc.getCount();
 
