@@ -16,7 +16,7 @@
   <img src="https://img.shields.io/github/languages/code-size/Rebine0xFF/Esp32-PingBox" alt="GitHub code size in bytes">
   <img src="https://img.shields.io/github/languages/top/Rebine0xFF/Esp32-PingBox?style=flat-square" alt="GitHub top language">
   <img src="https://img.shields.io/github/commit-activity/m/Rebine0xFF/Esp32-PingBox?style=flat-square" alt="GitHub commit activity">
-  <img src="https://img.shields.io/badge/Voltage_Regulators_Destroyed-1-orange?style=flat-square&logo=firefoxbrowser" alt="Smoke">
+  <img src="https://img.shields.io/badge/Voltage_Regulators_Destroyed-2-orange?style=flat-square&logo=firefoxbrowser" alt="Smoke">
 </p>
 
 *Hero img here*
