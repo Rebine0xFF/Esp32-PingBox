@@ -45,15 +45,18 @@
 ## Hardware
 
 *blabla*
+link to excel sheet
 [Wiring diagram](https://wokwi.com/projects/460384017138461697)
 
 ## Panel Design
 
 *img*
+link to design folder
+https://lopaka.app/editor/37020/76664
 
 ## Build Process
 
-*more imgs*
+*more imgs (from media folder)*
 
 ## *Engineering Challenges*
 
