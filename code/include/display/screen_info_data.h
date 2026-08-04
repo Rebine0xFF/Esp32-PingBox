@@ -1,11 +1,11 @@
 #pragma once
 #include <stdint.h>
 
-extern char TIME_text[];
-extern char DAY_text[];
-extern char DAY_NUMBER_text[];
-extern char IP_ADRESS_text[];
-extern char LAST_ACTION_text[];
+extern char TIME_text[6];
+extern char DAY_text[4];
+extern char DAY_NUMBER_text[3];
+extern char IP_ADRESS_text[16];
+extern char LAST_ACTION_text[6];
 
 extern const unsigned char* image_LAST_ACTION_ICON_bits;
 extern const unsigned char* image_WIFI_ICON_bits;
