@@ -5,10 +5,10 @@
 //  GPIO MAP
 // ------------------------------------------------------------
 
-// Displays — I²C
-#define PIN_SCREEN_MAIN_SDA 21      // Screen 1 — Hardware I²C
+// Displays - I²C
+#define PIN_SCREEN_MAIN_SDA 21      // Screen 1 - Hardware I²C
 #define PIN_SCREEN_MAIN_SCL 22
-#define PIN_SCREEN_INFO_SDA 25      // Screen 2 — Software I²C
+#define PIN_SCREEN_INFO_SDA 25      // Screen 2 - Software I²C
 #define PIN_SCREEN_INFO_SCL 26
 
 // Rotary encoder
@@ -27,7 +27,7 @@
 #define PIN_SW_MENU         27
 #define PIN_SW_POWER        13
 
-// LEDs (output) — illuminated button
+// LEDs (output) - illuminated button
 #define PIN_LED_BTN         4
 
 // ------------------------------------------------------------
@@ -38,8 +38,19 @@ constexpr int SERVO_POS_IN    = 0;
 constexpr int SERVO_POS_OUT   = 90;
 
 // ------------------------------------------------------------
-//  WIFI — fill before flashing
+//  WIFI - fill before flashing
 // ------------------------------------------------------------
 
 constexpr char WIFI_SSID[]      = "YOUR_SSID";
 constexpr char WIFI_PASSWORD[]  = "YOUR_PASSWORD";
+
+constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+
+// ------------------------------------------------------------
+//  NTP / TIME - France (CET/CEST automatique)
+// ------------------------------------------------------------
+constexpr char NTP_SERVER_1[] = "pool.ntp.org";
+constexpr char NTP_SERVER_2[] = "time.google.com";
+constexpr char TZ_FRANCE[]    = "CET-1CEST,M3.5.0,M10.5.0/3";
+
+constexpr uint32_t TIME_UPDATE_INTERVAL_MS = 1000;
