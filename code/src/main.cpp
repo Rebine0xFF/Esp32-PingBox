@@ -31,14 +31,12 @@ void setup() {
 void loop() {
 
     int duration = encoderGetMinutes();
+    int current_hour   = timeManagerGetHour();
+    int current_minute = timeManagerGetMinute();
+    screenMainUpdate(duration, current_hour, current_minute);
 
     wifiManagerUpdate();
     timeManagerUpdate();
-
-    int current_hour   = timeManagerGetHour();
-    int current_minute = timeManagerGetMinute();
-
-    screenMainUpdate(duration, current_hour, current_minute);
 
     // ------------------------------------------------------------
     //  Screen Info (Software I2C - expensive bit-banging)
