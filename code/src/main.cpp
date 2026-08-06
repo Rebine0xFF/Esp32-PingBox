@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <string.h>
 
 #include "display/screen_main.h"
 #include "display/screen_info.h"
@@ -7,6 +8,7 @@
 #include "input/buttons.h"
 #include "network/wifi_manager.h"
 #include "network/time_manager.h"
+#include "config.h"
 
 // ============================================================
 //  SETUP
@@ -39,19 +41,20 @@ void loop() {
     screenMainUpdate(duration, current_hour, current_minute);
 
     // ------------------------------------------------------------
-    //  Screen Info (Software I2C - bit-banging expensive on CPU)
+    //  Screen Info (Software I2C - expensive bit-banging)
     //
     //  Rules:
-    //  1. Only update if something has changed (time, status, action...)
-    //  2. TODO (later): never update while screenMain is being updated
-    //     (with buffer, so during entire encoder rotation, no update
-    //     should be made on screenInfo)
+    //  1. Only update when something changes (time, status, action, etc.)
+    //  2. Never update while screenMain is being actively adjusted -
+    //     the redraw is deferred until the encoder has been idle for
+    //     ENCODER_IDLE_MS, to avoid stuttering the animated wheel.
     // ------------------------------------------------------------
     static char lastTime[6]   = "";
     static char lastDay[4]    = "";
     static char lastDayNum[3] = "";
     static char lastIP[16]    = "";
     static bool lastWifiOk    = false;
+    static bool infoUpdatePending = false;
 
     char newTime[6], newDay[4], newDayNum[3], newIP[16];
     timeManagerGetTimeString(newTime, sizeof(newTime));
@@ -67,6 +70,7 @@ void loop() {
                 || wifiOk != lastWifiOk;
 
     if (changed) {
+        // Cheap: just copies into RAM buffers, no I2C traffic yet
         snprintf(TIME_text, sizeof(TIME_text), "%s", newTime);
         snprintf(DAY_text, sizeof(DAY_text), "%s", newDay);
         snprintf(DAY_NUMBER_text, sizeof(DAY_NUMBER_text), "%s", newDayNum);
@@ -80,6 +84,15 @@ void loop() {
 
         setWifiStatus(wifiOk ? Status::OK : Status::ERROR);
 
-        screenInfoUpdate();
+        // Defer the actual (expensive) redraw instead of firing it now
+        infoUpdatePending = true;
+    }
+
+    if (infoUpdatePending) {
+        uint32_t idleFor = millis() - encoderGetLastChangeMs();
+        if (idleFor >= ENCODER_IDLE_MS) {
+            screenInfoUpdate();
+            infoUpdatePending = false;
+        }
     }
 }

@@ -4,8 +4,8 @@
 
 static ESP32Encoder enc;
 
-
-static int _duration_minutes = 0;   // défault at startup
+static int _duration_minutes = 0;   // default at startup
+static uint32_t _lastChangeMs = 0;  // timestamp of the last detected rotation
 
 static const int MIN_MINUTES = 0;
 static const int MAX_MINUTES = 90;
@@ -14,10 +14,10 @@ void encoderInit() {
 
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
 
-    // SingleEdge = 1 clic physique = 1 incrément → 1 minute par cran
+    // SingleEdge = 1 physical click = 1 increment -> 1 minute per notch
     enc.attachHalfQuad(PIN_ENC_CLK, PIN_ENC_DT);
 
-    // On initialise le compteur à la valeur par défaut
+    // Initialize the counter to the default value
     enc.setCount(_duration_minutes);
 
     pinMode(PIN_ENC_SW, INPUT_PULLUP);
@@ -27,10 +27,8 @@ void encoderInit() {
 int encoderGetMinutes() {
 
     if (digitalRead(PIN_ENC_SW) == LOW) {
-    enc.setCount(0);
+        enc.setCount(0);
     }
-
-
 
     int raw = (int)enc.getCount();
 
@@ -43,6 +41,16 @@ int encoderGetMinutes() {
         raw = MAX_MINUTES;
     }
 
+    // Track rotation activity for idle-detection purposes
+    // (used to defer costly info screen redraws)
+    if (raw != _duration_minutes) {
+        _lastChangeMs = millis();
+    }
+
     _duration_minutes = raw;
     return _duration_minutes;
+}
+
+uint32_t encoderGetLastChangeMs() {
+    return _lastChangeMs;
 }
