@@ -2,17 +2,24 @@
 #include <Arduino.h>
 
 // ============================================================
-//  Time Manager - sync NTP via configTzTime (non-blocking)
-//  Automatically handles CET/CEST for France
+//  Time Manager - custom raw-UDP NTP client (non-blocking)
+//  Handles CET/CEST automatically for France.
 //
-//  The RTC is read and formatted ONCE per TIME_UPDATE_INTERVAL_MS
-//  inside timeManagerUpdate(), then cached. Getters only return
-//  the cached copies — they never touch the RTC — so they are
-//  cheap and safe to call every loop() iteration.
+//  Bypasses the precompiled lwIP SNTP client on purpose: with the
+//  Arduino framework on PlatformIO, lwip/sntp.c ships as a prebuilt
+//  static library, so its internal random startup delay and
+//  exponential retry backoff cannot be tuned via build flags.
+//  This module sends its own minimal NTP request instead, giving
+//  full control over timing.
+//
+//  The RTC is formatted into cached strings inside timeManagerUpdate(),
+//  throttled to TIME_UPDATE_INTERVAL_MS. Getters only return the
+//  cached copies ; they never touch the RTC ; so they are cheap and
+//  safe to call every loop() iteration.
 // ============================================================
 
 void timeManagerInit();
-void timeManagerUpdate();
+void timeManagerUpdate();          // call every loop() - internally non-blocking
 bool timeManagerIsSynced();
 
 int  timeManagerGetHour();
