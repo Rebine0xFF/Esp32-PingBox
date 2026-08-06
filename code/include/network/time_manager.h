@@ -4,6 +4,11 @@
 // ============================================================
 //  Time Manager - sync NTP via configTzTime (non-blocking)
 //  Automatically handles CET/CEST for France
+//
+//  The RTC is read and formatted ONCE per TIME_UPDATE_INTERVAL_MS
+//  inside timeManagerUpdate(), then cached. Getters only return
+//  the cached copies — they never touch the RTC — so they are
+//  cheap and safe to call every loop() iteration.
 // ============================================================
 
 void timeManagerInit();
