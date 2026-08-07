@@ -63,6 +63,16 @@ constexpr uint32_t NTP_RESYNC_INTERVAL_MS   = 3600000UL; // re-sync once an hour
 constexpr uint32_t TIME_UPDATE_INTERVAL_MS  = 1000;      // throttle for re-formatting the cache
 
 // ------------------------------------------------------------
+//  DISCORD
+// ------------------------------------------------------------
+
+constexpr char DISCORD_API_BASE[]  = "https://discord.com/api/v10";
+constexpr char DISCORD_ACK_EMOJI[] = "%E2%9C%85";
+
+constexpr uint32_t DISCORD_ACK_POLL_INTERVAL_MS = 7000;    // how often to poll for a reaction while pending
+constexpr uint32_t DISCORD_ACK_TIMEOUT_MS       = 600000;  // give up waiting after 10 minutes
+
+// ------------------------------------------------------------
 //  Miscellaneous
 // ------------------------------------------------------------
 
