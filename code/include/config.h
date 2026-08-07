@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "secrets.h"
 
 // ------------------------------------------------------------
 //  GPIO MAP
@@ -37,20 +38,36 @@
 constexpr int SERVO_POS_IN    = 0;
 constexpr int SERVO_POS_OUT   = 90;
 
-// ------------------------------------------------------------
-//  WIFI - fill before flashing
-// ------------------------------------------------------------
 
-constexpr char WIFI_SSID[]      = "YOUR_SSID";
-constexpr char WIFI_PASSWORD[]  = "YOUR_PASSWORD";
 
-constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
 
 // ------------------------------------------------------------
 //  NTP / TIME - France (CET/CEST automatique)
+//  Custom raw-UDP NTP client (bypasses the precompiled lwIP SNTP
+//  client, whose startup-delay/backoff behavior can't be tuned
+//  through build flags with the Arduino framework on PlatformIO)
 // ------------------------------------------------------------
+
 constexpr char NTP_SERVER_1[] = "pool.ntp.org";
-constexpr char NTP_SERVER_2[] = "time.google.com";
 constexpr char TZ_FRANCE[]    = "CET-1CEST,M3.5.0,M10.5.0/3";
 
-constexpr uint32_t TIME_UPDATE_INTERVAL_MS = 1000;
+constexpr uint16_t NTP_LOCAL_PORT           = 2390;
+constexpr uint32_t NTP_REQUEST_TIMEOUT_MS   = 1500;      // max wait for a response
+constexpr uint32_t NTP_RETRY_INTERVAL_MS    = 2000;      // delay between retries until synced
+constexpr uint32_t NTP_RESYNC_INTERVAL_MS   = 3600000UL; // re-sync once an hour once synced
+
+constexpr uint32_t TIME_UPDATE_INTERVAL_MS  = 1000;      // throttle for re-formatting the cache
+
+// ------------------------------------------------------------
+//  Miscellaneous
+// ------------------------------------------------------------
+
+constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+
+// Info screen updates are deferred while the encoder is actively
+// rotating, and fire once it has been idle for this long (ms).
+constexpr uint32_t ENCODER_IDLE_MS = 500;
