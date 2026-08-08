@@ -1,8 +1,9 @@
-#include "display/screen_main.h"
-#include "config.h"
 #include <U8g2lib.h>
 #include <Wire.h>
 #include <math.h>
+#include "display/screen_main.h"
+#include "display/hourglass_anim.h"
+#include "config.h"
 
 
 static U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
@@ -59,7 +60,7 @@ void screenMainInit() {
 // ------------------------------------------------------------
 
 
-void screenMainUpdate(int duration_minutes, int current_hour, int current_minute) {
+void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, bool callActive) {
     // ── Mise à l'échelle interne ──────────────────────────────
     //  On travaille en "dixièmes de minute" (×10) pour conserver
     //  la même arithmétique entière que l'original (qui était ×10 pour les %)
@@ -162,6 +163,9 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
     snprintf(str_buf, sizeof(str_buf), "-> %dh%02d", end_hour, end_minute);
     sw = display.getStrWidth(str_buf);
     display.drawStr(73, 23, str_buf);
+
+    
+    hourglassAnimDraw(display, callActive);
 
     display.sendBuffer();
 }

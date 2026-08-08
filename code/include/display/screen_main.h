@@ -6,4 +6,4 @@
 // ============================================================
 
 void screenMainInit();
-void screenMainUpdate(int duration_minutes, int current_hour, int current_minute);
+void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, bool callActive);
