@@ -31,16 +31,37 @@ void setup() {
 
 void loop() {
 
-    int duration = encoderGetMinutes();
-    int current_hour   = timeManagerGetHour();
-    int current_minute = timeManagerGetMinute();
-    screenMainUpdate(duration, current_hour, current_minute);
+    int encoderDuration = encoderGetMinutes();
+    int current_hour    = timeManagerGetHour();
+    int current_minute  = timeManagerGetMinute();
+
+    // ------------------------------------------------------------
+    //  Wheel display value:
+    //  - Idle: whatever the encoder is set to (free adjustment).
+    //  - While a call is pending ack: locked to the real countdown
+    //    towards the target time captured at send-time, so the wheel
+    //    ticks down in sync with the clock instead of the encoder.
+    // ------------------------------------------------------------
+    static int _callTargetTotalMinutes = 0;
+    bool callActive = discordIsAckPending();
+
+    int wheelDuration = encoderDuration;
+    if (callActive) {
+        int currentTotalMinutes = current_hour * 60 + current_minute;
+        int remaining = _callTargetTotalMinutes - currentTotalMinutes;
+        if (remaining < 0) remaining = 0;
+        wheelDuration = remaining;
+    }
+
+    screenMainUpdate(wheelDuration, current_hour, current_minute, callActive);
 
     wifiManagerUpdate();
     timeManagerUpdate();
 
-    if (buttonSendPressed()) {
-        discordSendCallMessage(duration);
+    if (buttonSendPressed() && encoderDuration > 0) {
+        if (discordSendCallMessage(encoderDuration)) {
+            _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
+        }
     }
     discordNotifierUpdate();
 
