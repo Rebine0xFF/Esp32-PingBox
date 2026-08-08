@@ -1,4 +1,5 @@
 #include "display/screen_info_data.h"
+#include <Arduino.h>
 
 
 char TIME_text[6]        = "00:00";     // "23:59\0"
@@ -49,3 +50,21 @@ static const Icon* _iconFromStatus(Status s) {
 
 void setWifiStatus(Status s)   { image_WIFI_STATUS_bits   = _iconFromStatus(s); }
 void setServerStatus(Status s) { image_SERVER_STATUS_bits = _iconFromStatus(s); }
+
+
+// Last action tracking
+static uint32_t _lastActionVersion = 0;
+
+void setLastAction(LastAction action, const char* timeText) {
+    switch (action) {
+        case LastAction::CALLED:   image_LAST_ACTION_ICON_bits = _started_timer;     break;
+        case LastAction::APPROVED: image_LAST_ACTION_ICON_bits = _received_approval; break;
+        case LastAction::URGENT:   image_LAST_ACTION_ICON_bits = _called_urgent;     break;
+        case LastAction::NONE:
+        default:                   image_LAST_ACTION_ICON_bits = _no_history;        break;
+    }
+    snprintf(LAST_ACTION_text, sizeof(LAST_ACTION_text), "%s", timeText);
+    _lastActionVersion++;
+}
+
+uint32_t getLastActionVersion() { return _lastActionVersion; }

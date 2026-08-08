@@ -8,6 +8,7 @@
 #include "input/buttons.h"
 #include "network/wifi_manager.h"
 #include "network/time_manager.h"
+#include "network/discord_notifier.h"
 #include "config.h"
 
 // ============================================================
@@ -38,20 +39,25 @@ void loop() {
     wifiManagerUpdate();
     timeManagerUpdate();
 
+    if (buttonSendPressed()) {
+        discordSendCallMessage(duration);
+    }
+    discordNotifierUpdate();
+
     // ------------------------------------------------------------
     //  Screen Info (Software I2C - expensive bit-banging)
     //
     //  Rules:
     //  1. Only update when something changes (time, status, action, etc.)
-    //  2. Never update while screenMain is being actively adjusted -
-    //     the redraw is deferred until the encoder has been idle for
-    //     ENCODER_IDLE_MS, to avoid stuttering the animated wheel.
+    //  2. Deferred until the encoder has been idle for ENCODER_IDLE_MS,
+    //     to avoid stuttering the animated main wheel.
     // ------------------------------------------------------------
     static char lastTime[6]   = "";
     static char lastDay[4]    = "";
     static char lastDayNum[3] = "";
     static char lastIP[16]    = "";
     static bool lastWifiOk    = false;
+    static uint32_t lastActionVersionSeen = 0;
     static bool infoUpdatePending = false;
 
     char newTime[6], newDay[4], newDayNum[3], newIP[16];
@@ -60,15 +66,16 @@ void loop() {
     timeManagerGetDayNumber(newDayNum, sizeof(newDayNum));
     wifiManagerGetIPString(newIP, sizeof(newIP));
     bool wifiOk = wifiManagerIsConnected();
+    uint32_t currentActionVersion = getLastActionVersion();
 
     bool changed = strcmp(newTime, lastTime) != 0
                 || strcmp(newDay, lastDay) != 0
                 || strcmp(newDayNum, lastDayNum) != 0
                 || strcmp(newIP, lastIP) != 0
-                || wifiOk != lastWifiOk;
+                || wifiOk != lastWifiOk
+                || currentActionVersion != lastActionVersionSeen;
 
     if (changed) {
-        // Cheap: just copies into RAM buffers, no I2C traffic yet
         snprintf(TIME_text, sizeof(TIME_text), "%s", newTime);
         snprintf(DAY_text, sizeof(DAY_text), "%s", newDay);
         snprintf(DAY_NUMBER_text, sizeof(DAY_NUMBER_text), "%s", newDayNum);
@@ -79,10 +86,10 @@ void loop() {
         strcpy(lastDayNum, newDayNum);
         strcpy(lastIP, newIP);
         lastWifiOk = wifiOk;
+        lastActionVersionSeen = currentActionVersion;
 
         setWifiStatus(wifiOk ? Status::OK : Status::ERROR);
 
-        // Defer the actual (expensive) redraw instead of firing it now
         infoUpdatePending = true;
     }
 
