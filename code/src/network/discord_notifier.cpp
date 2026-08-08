@@ -28,13 +28,21 @@ static uint32_t _lastPollMs        = 0;
 static int _discordRequest(const char* method, const String& url, const String& payload, String& response) {
     WiFiClientSecure client;
     client.setInsecure();
+    client.setTimeout(5000); // socket-level read timeout (ms), prevents an indefinite block on a stalled stream
 
     HTTPClient http;
+    http.setConnectTimeout(5000); // TLS handshake / TCP connect timeout
+    http.setTimeout(5000);        // overall response read timeout
+    http.setReuse(false);         // never try to keep this TLS session alive for a future call
+
     if (!http.begin(client, url)) return -1;
 
     http.addHeader("Authorization", String("Bot ") + DISCORD_BOT_TOKEN);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("User-Agent", "PingBox (https://github.com/Rebine0xFF/Esp32-PingBox, 1.0)");
+    // Forces Discord/Cloudflare to close the socket right after replying instead of
+    // keeping it alive — this is what was causing getString() to hang forever.
+    http.addHeader("Connection", "close");
 
     int code;
     if (strcmp(method, "POST") == 0)      code = http.POST(payload);
