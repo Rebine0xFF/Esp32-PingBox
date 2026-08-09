@@ -23,6 +23,7 @@ void setup() {
 
     wifiManagerInit();
     timeManagerInit();
+    discordNotifierInit(); // spins up the background Discord I/O task
 }
 
 // ============================================================
@@ -36,34 +37,42 @@ void loop() {
     int current_minute  = timeManagerGetMinute();
 
     // ------------------------------------------------------------
-    //  Wheel display value:
-    //  - Idle: whatever the encoder is set to (free adjustment).
-    //  - While a call is pending ack: locked to the real countdown
-    //    towards the target time captured at send-time, so the wheel
-    //    ticks down in sync with the clock instead of the encoder.
+    //  Call countdown - owned by main.cpp, driven purely by the real
+    //  clock. Independent from Discord's own send/ack state:
+    //  acknowledging the message on Discord only updates the "last
+    //  action" display, it never stops this countdown.
     // ------------------------------------------------------------
-    static int _callTargetTotalMinutes = 0;
-    bool callActive = discordIsAckPending();
+    static bool _callActive = false;
+    static int  _callTargetTotalMinutes = 0;
 
     int wheelDuration = encoderDuration;
-    if (callActive) {
+    if (_callActive) {
         int currentTotalMinutes = current_hour * 60 + current_minute;
         int remaining = _callTargetTotalMinutes - currentTotalMinutes;
-        if (remaining < 0) remaining = 0;
+        if (remaining <= 0) {
+            remaining = 0;
+            _callActive = false; // target time reached
+        }
         wheelDuration = remaining;
     }
 
-    screenMainUpdate(wheelDuration, current_hour, current_minute, callActive);
+    screenMainUpdate(wheelDuration, current_hour, current_minute, _callActive);
 
     wifiManagerUpdate();
     timeManagerUpdate();
 
     if (buttonSendPressed() && encoderDuration > 0) {
-        if (discordSendCallMessage(encoderDuration)) {
-            _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-        }
+        _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
+        _callActive = true;
+
+        // Reflect the new state (hourglass, synced wheel) right away instead
+        // of waiting for the next loop() pass. discordSendCallMessage() below
+        // only queues the request for the background task and returns
+        // immediately - it never blocks this render.
+        screenMainUpdate(encoderDuration, current_hour, current_minute, true);
+
+        discordSendCallMessage(encoderDuration, current_hour, current_minute);
     }
-    discordNotifierUpdate();
 
     // ------------------------------------------------------------
     //  Screen Info (Software I2C - expensive bit-banging)
