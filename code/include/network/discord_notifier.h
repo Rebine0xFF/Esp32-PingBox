@@ -5,18 +5,29 @@
 //  Discord Notifier - sends a call message to a Discord channel
 //  and polls for a checkmark reaction to detect acknowledgment.
 //
-//  Fully self-contained on the ESP32: no external bot/service
-//  required. Uses the Discord REST API directly over HTTPS with
-//  a bot token (no Gateway/WebSocket connection).
+//  All Discord HTTPS calls (POST/PUT/GET) run on a dedicated
+//  FreeRTOS task pinned to the other core (see discordNotifierInit()).
+//  TLS handshakes with Cloudflare commonly take ~1s on the ESP32,
+//  and the Arduino HTTPClient has no async mode - running these
+//  calls directly in loop() would freeze the screens for their
+//  entire duration, repeatedly, for as long as a message is
+//  pending acknowledgment. Backgrounding them keeps rendering
+//  perfectly smooth regardless of network latency.
+//
+//  The on-screen countdown (main.cpp) is intentionally independent
+//  from this module's internal state: acknowledging a message on
+//  Discord only updates the "last action" display, it never stops
+//  the countdown.
 // ============================================================
 
-void discordNotifierInit();
-void discordNotifierUpdate();   // call every loop() ; internally throttled, non-blocking between calls
+void discordNotifierInit();   // creates the background task ; call once from setup()
 
-// Sends a new call message and seeds it with the bot's own checkmark
-// reaction. Blocking (~1-2s, two HTTPS calls) ; acceptable since this
-// only runs once per physical button press, not every loop().
-// Ignored (returns false) if a message is already pending acknowledgment.
-bool discordSendCallMessage(int duration_minutes);
+// Queues a new call message + seed reaction, built from the given
+// duration and current clock time (captured here rather than having
+// the background task read time_manager's cache from another task).
+// Returns immediately (never blocks). Returns false only if a send
+// is already queued and not yet picked up by the background task.
+bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute);
 
+// True while a send/ack-poll cycle is in progress on the Discord side.
 bool discordIsAckPending();
