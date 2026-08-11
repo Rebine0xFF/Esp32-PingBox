@@ -36,7 +36,7 @@ static void _drawContent() {
     display.drawFrame(68, 39, 60, 25);
 
     // action rect deco
-    display.drawXBM(69, 40, 58, 23, image_action_rect_deco_bits);
+    display.drawXBMP(69, 40, 58, 23, image_action_rect_deco_bits);
 
     // last text
     display.setFont(u8g2_font_haxrcorp4089_tr);
@@ -58,10 +58,10 @@ static void _drawContent() {
     display.drawLine(104, 1, 104, 15);
 
     // calendar lower deco
-    display.drawXBM(105, 14, 19, 2, image_calendar_lower_deco_bits);
+    display.drawXBMP(105, 14, 19, 2, image_calendar_lower_deco_bits);
 
     // calendar upper deco
-    display.drawXBM(105, 1, 19, 2, image_calendar_upper_deco_bits);
+    display.drawXBMP(105, 1, 19, 2, image_calendar_upper_deco_bits);
 
     // separation line
     display.drawLine(63, 63, 63, 0);
@@ -109,19 +109,19 @@ static void _drawContent() {
     display.drawStr(93, 54, LAST_ACTION_text);
 
     // LAST ACTION ICON
-    display.drawXBM(72, 44, 15, 16, image_LAST_ACTION_ICON_bits);
+    display.drawXBMP(72, 44, 15, 16, image_LAST_ACTION_ICON_bits);
 
     // WIFI STATUS
-    display.drawXBM(27, 50, image_WIFI_STATUS_bits->w, image_WIFI_STATUS_bits->h, image_WIFI_STATUS_bits->data);
+    display.drawXBMP(27, 50, image_WIFI_STATUS_bits->w, image_WIFI_STATUS_bits->h, image_WIFI_STATUS_bits->data);
 
     // SERVER STATUS
-    display.drawXBM(42, 41, image_SERVER_STATUS_bits->w, image_SERVER_STATUS_bits->h, image_SERVER_STATUS_bits->data);
+    display.drawXBMP(42, 41, image_SERVER_STATUS_bits->w, image_SERVER_STATUS_bits->h, image_SERVER_STATUS_bits->data);
 
     // WIFI ICON
-    display.drawXBM(2, 22, 19, 16, image_WIFI_ICON_bits);
+    display.drawXBMP(2, 22, 19, 16, image_WIFI_ICON_bits);
 
     // STATUS FACE
-    display.drawXBM(33, 22, 29, 14, image_STATUS_FACE_bits);
+    display.drawXBMP(33, 22, 29, 14, image_STATUS_FACE_bits);
     // [END lopaka generated]
 
 }
