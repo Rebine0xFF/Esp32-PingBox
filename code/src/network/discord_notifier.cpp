@@ -15,10 +15,11 @@ enum class DiscordState { IDLE, WAITING_ACK };
 // Fields touched by BOTH tasks (main loop + background worker) - guarded by _mutex.
 struct DiscordShared {
     volatile DiscordState state = DiscordState::IDLE;
-    bool sendRequested      = false;
+    bool sendRequested       = false;
     int  sendDurationMinutes = 0;
     int  sendHour            = 0;
     int  sendMinute          = 0;
+    bool ackReceived         = false;
 };
 
 static DiscordShared     _shared;
@@ -49,13 +50,25 @@ static int _discordRequest(const char* method, const String& url, const String& 
     http.addHeader("Authorization", String("Bot ") + DISCORD_BOT_TOKEN);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("User-Agent", "PingBox (https://github.com/Rebine0xFF/Esp32-PingBox, 1.0)");
+    
+    // Force the server to close the TCP connection immediately after the response.
+    // Prevents HTTPClient::getString() from hanging until Cloudflare's Keep-Alive timeout.
+    http.addHeader("Connection", "close");
 
     int code;
     if (strcmp(method, "POST") == 0)      code = http.POST(payload);
     else if (strcmp(method, "PUT") == 0)  code = http.PUT(payload);
     else                                   code = http.GET();
 
-    response = http.getString();
+    // Do not attempt to read a body for a "204 No Content" response.
+    // Calling getString() on a 204 causes the ESP32 to hang waiting for EOF
+    // until the underlying TCP socket times out (approx. 7 minutes).
+    if (code > 0 && code != 204) {
+        response = http.getString();
+    } else {
+        response = "";
+    }
+    
     http.end();
     return code;
 }
@@ -110,14 +123,9 @@ static void _doPollAck() {
     JsonArray arr = doc.as<JsonArray>();
 
     if ((int)arr.size() > _reactionBaseline) {
-        char timeStr[6];
-        timeManagerGetTimeString(timeStr, sizeof(timeStr));
-        setLastAction(LastAction::APPROVED, timeStr);
-
-        // Acknowledging just means "seen" - it stops OUR polling (nothing
-        // more to check), but the on-screen countdown in main.cpp is fully
-        // independent and keeps running regardless of this state.
+        // Just flag the event. The UI thread (main loop) will handle the screen update.
         xSemaphoreTake(_mutex, portMAX_DELAY);
+        _shared.ackReceived = true;
         _shared.state = DiscordState::IDLE;
         xSemaphoreGive(_mutex);
     }
@@ -194,4 +202,15 @@ bool discordIsAckPending() {
     pending = (_shared.state == DiscordState::WAITING_ACK);
     xSemaphoreGive(_mutex);
     return pending;
+}
+
+bool discordCheckAndClearAck() {
+    bool ack = false;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    if (_shared.ackReceived) {
+        ack = true;
+        _shared.ackReceived = false;
+    }
+    xSemaphoreGive(_mutex);
+    return ack;
 }
