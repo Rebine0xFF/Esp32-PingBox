@@ -109,12 +109,16 @@ static void _refreshCacheFromSystemClock() {
     time(&now);
     localtime_r(&now, &timeinfo);
 
-    _cachedHour   = timeinfo.tm_hour;
-    _cachedMinute = timeinfo.tm_min;
+    // Only format strings and update state if the minute actually changed
+    // This saves CPU cycles on the main thread compared to running snprintf every second
+    if (_cachedMinute != timeinfo.tm_min || _cachedHour != timeinfo.tm_hour) {
+        _cachedHour   = timeinfo.tm_hour;
+        _cachedMinute = timeinfo.tm_min;
 
-    snprintf(_cachedTime, sizeof(_cachedTime), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
-    snprintf(_cachedDay, sizeof(_cachedDay), "%s", _dayNamesFr[timeinfo.tm_wday]);
-    snprintf(_cachedDayNum, sizeof(_cachedDayNum), "%02d", timeinfo.tm_mday);
+        snprintf(_cachedTime, sizeof(_cachedTime), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+        snprintf(_cachedDay, sizeof(_cachedDay), "%s", _dayNamesFr[timeinfo.tm_wday]);
+        snprintf(_cachedDayNum, sizeof(_cachedDayNum), "%02d", timeinfo.tm_mday);
+    }
 }
 
 // ------------------------------------------------------------

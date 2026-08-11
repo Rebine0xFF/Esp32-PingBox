@@ -20,7 +20,7 @@ void wifiManagerUpdate() {
     if (now - _lastAttemptMs > WIFI_RECONNECT_INTERVAL_MS) {
         _lastAttemptMs = now;
         WiFi.disconnect();
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        WiFi.reconnect(); // Faster reconnection using internal saved credentials
     }
 }
 
