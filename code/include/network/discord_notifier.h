@@ -31,3 +31,7 @@ bool discordSendCallMessage(int duration_minutes, int current_hour, int current_
 
 // True while a send/ack-poll cycle is in progress on the Discord side.
 bool discordIsAckPending();
+
+// Checks if an ACK was received since last call, and clears the flag.
+// Called safely from the main UI thread.
+bool discordCheckAndClearAck();

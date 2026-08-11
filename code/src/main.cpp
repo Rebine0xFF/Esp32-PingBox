@@ -61,6 +61,18 @@ void loop() {
     wifiManagerUpdate();
     timeManagerUpdate();
 
+    // Check if background task received a Discord reaction (limit check to twice a second
+    // to prevent FreeRTOS mutex starvation on the background task)
+    static uint32_t lastAckCheck = 0;
+    if (millis() - lastAckCheck > 500) {
+        lastAckCheck = millis();
+        if (discordCheckAndClearAck()) {
+            char timeStr[6];
+            timeManagerGetTimeString(timeStr, sizeof(timeStr));
+            setLastAction(LastAction::APPROVED, timeStr);
+        }
+    }
+
     if (buttonSendPressed() && encoderDuration > 0) {
         _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
         _callActive = true;
