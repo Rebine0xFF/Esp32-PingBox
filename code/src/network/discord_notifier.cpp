@@ -94,10 +94,6 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute) {
     int seedCode = _discordRequest("PUT", reactUrl, "", reactResponse);
     _reactionBaseline = (seedCode == 204) ? 1 : 0;
 
-    char timeStr[6];
-    snprintf(timeStr, sizeof(timeStr), "%02d:%02d", hour, minute);
-    setLastAction(LastAction::CALLED, timeStr);
-
     return true;
 }
 

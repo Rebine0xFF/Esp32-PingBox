@@ -53,7 +53,7 @@ void setServerStatus(Status s) { image_SERVER_STATUS_bits = _iconFromStatus(s); 
 
 
 // Last action tracking
-static uint32_t _lastActionVersion = 0;
+static volatile uint32_t _lastActionVersion = 0;
 
 void setLastAction(LastAction action, const char* timeText) {
     switch (action) {

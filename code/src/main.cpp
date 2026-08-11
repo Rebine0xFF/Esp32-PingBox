@@ -71,6 +71,11 @@ void loop() {
         // immediately - it never blocks this render.
         screenMainUpdate(encoderDuration, current_hour, current_minute, true);
 
+        // Reflect physical action instantly on Info Screen
+        char timeStr[6];
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
+        setLastAction(LastAction::CALLED, timeStr);
+
         discordSendCallMessage(encoderDuration, current_hour, current_minute);
     }
 
