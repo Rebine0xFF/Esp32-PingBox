@@ -105,6 +105,7 @@ void loop() {
     static char lastIP[16]    = "";
     static bool lastWifiOk    = false;
     static uint32_t lastActionVersionSeen = 0;
+    static DiscordServerStatus lastServerStatus = DiscordServerStatus::PAUSED;
     static bool infoUpdatePending = false;
 
     char newTime[6], newDay[4], newDayNum[3], newIP[16];
@@ -114,13 +115,15 @@ void loop() {
     wifiManagerGetIPString(newIP, sizeof(newIP));
     bool wifiOk = wifiManagerIsConnected();
     uint32_t currentActionVersion = getLastActionVersion();
+    DiscordServerStatus discordStatus = discordGetServerStatus();
 
     bool changed = strcmp(newTime, lastTime) != 0
                 || strcmp(newDay, lastDay) != 0
                 || strcmp(newDayNum, lastDayNum) != 0
                 || strcmp(newIP, lastIP) != 0
                 || wifiOk != lastWifiOk
-                || currentActionVersion != lastActionVersionSeen;
+                || currentActionVersion != lastActionVersionSeen
+                || discordStatus != lastServerStatus;
 
     if (changed) {
         snprintf(TIME_text, sizeof(TIME_text), "%s", newTime);
@@ -134,8 +137,23 @@ void loop() {
         strcpy(lastIP, newIP);
         lastWifiOk = wifiOk;
         lastActionVersionSeen = currentActionVersion;
+        lastServerStatus = discordStatus;
 
+        // WiFi icon + small status glyph
+        setWifiIcon(wifiOk);
         setWifiStatus(wifiOk ? Status::OK : Status::ERROR);
+
+        // Discord server status glyph (PAUSED = no interaction yet, not an error)
+        Status serverStatus = Status::PAUSED;
+        switch (discordStatus) {
+            case DiscordServerStatus::OK:    serverStatus = Status::OK;    break;
+            case DiscordServerStatus::ERROR: serverStatus = Status::ERROR; break;
+            default:                         serverStatus = Status::PAUSED; break;
+        }
+        setServerStatus(serverStatus);
+
+        // Global face: happy unless WiFi is down or the last Discord call failed
+        setStatusFace(wifiOk && discordStatus != DiscordServerStatus::ERROR);
 
         infoUpdatePending = true;
     }
