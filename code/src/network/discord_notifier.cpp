@@ -9,6 +9,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <atomic>
 
 enum class DiscordState { IDLE, WAITING_ACK };
 
@@ -24,6 +25,15 @@ struct DiscordShared {
 
 static DiscordShared     _shared;
 static SemaphoreHandle_t _mutex = nullptr;
+
+// Lock-free status flag, kept separate from the mutex-guarded _shared
+// struct : only the Discord task writes it, only the UI thread reads it,
+// so a single atomic int is enough to guarantee cross-core visibility.
+static std::atomic<int> _serverStatus{(int)DiscordServerStatus::PAUSED};
+
+static void _setServerStatus(DiscordServerStatus s) {
+    _serverStatus.store((int)s, std::memory_order_relaxed);
+}
 
 // Fields only ever touched by the background worker task - no locking needed.
 static String   _pendingMessageId  = "";
@@ -92,7 +102,11 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute) {
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
     String response;
     int code = _discordRequest("POST", url, payload, response);
-    if (code != 200 && code != 201) return false;
+    if (code != 200 && code != 201) {
+        _setServerStatus(DiscordServerStatus::ERROR);
+        return false;
+    }
+    _setServerStatus(DiscordServerStatus::OK);
 
     JsonDocument respDoc;
     if (deserializeJson(respDoc, response) != DeserializationError::Ok) return false;
@@ -116,7 +130,11 @@ static void _doPollAck() {
                + "/messages/" + _pendingMessageId + "/reactions/" + DISCORD_ACK_EMOJI;
     String response;
     int code = _discordRequest("GET", url, "", response);
-    if (code != 200) return;
+    if (code != 200) {
+        _setServerStatus(DiscordServerStatus::ERROR);
+        return;
+    }
+    _setServerStatus(DiscordServerStatus::OK);
 
     JsonDocument doc;
     if (deserializeJson(doc, response) != DeserializationError::Ok) return;
@@ -213,4 +231,8 @@ bool discordCheckAndClearAck() {
     }
     xSemaphoreGive(_mutex);
     return ack;
+}
+
+DiscordServerStatus discordGetServerStatus() {
+    return (DiscordServerStatus)_serverStatus.load(std::memory_order_relaxed);
 }

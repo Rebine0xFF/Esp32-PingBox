@@ -20,6 +20,8 @@
 //  the countdown.
 // ============================================================
 
+enum class DiscordServerStatus { PAUSED, OK, ERROR };
+
 void discordNotifierInit();   // creates the background task ; call once from setup()
 
 // Queues a new call message + seed reaction, built from the given
@@ -35,3 +37,7 @@ bool discordIsAckPending();
 // Checks if an ACK was received since last call, and clears the flag.
 // Called safely from the main UI thread.
 bool discordCheckAndClearAck();
+
+// Status of the last Discord HTTP call (send or ack poll).
+// safe to call every loop()
+DiscordServerStatus discordGetServerStatus();
