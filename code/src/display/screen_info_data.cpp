@@ -36,8 +36,8 @@ static const Icon ICON_OK     = {_ok_status,     9, 6};
 static const Icon ICON_PAUSED = {_paused_status, 12, 5};
 static const Icon ICON_ERROR  = {_error_status,  9, 8};
 
-const Icon* image_WIFI_STATUS_bits   = &ICON_ERROR;
-const Icon* image_SERVER_STATUS_bits = &ICON_ERROR;
+const Icon* image_WIFI_STATUS_bits   = &ICON_PAUSED;
+const Icon* image_SERVER_STATUS_bits = &ICON_PAUSED;
 
 static const Icon* _iconFromStatus(Status s) {
     switch (s) {
@@ -48,8 +48,17 @@ static const Icon* _iconFromStatus(Status s) {
     }
 }
 
+
 void setWifiStatus(Status s)   { image_WIFI_STATUS_bits   = _iconFromStatus(s); }
 void setServerStatus(Status s) { image_SERVER_STATUS_bits = _iconFromStatus(s); }
+
+void setWifiIcon(bool connected) {
+    image_WIFI_ICON_bits = connected ? _wifi_connected : _wifi_disconnected;
+}
+
+void setStatusFace(bool ok) {
+    image_STATUS_FACE_bits = ok ? _face_happy : _face_unhappy;
+}
 
 
 // Last action tracking

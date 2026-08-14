@@ -35,4 +35,6 @@ extern const Icon* image_SERVER_STATUS_bits;
 
 void setWifiStatus(Status s);
 void setServerStatus(Status s);
+void setWifiIcon(bool connected);
+void setStatusFace(bool ok);
 //****************************************
