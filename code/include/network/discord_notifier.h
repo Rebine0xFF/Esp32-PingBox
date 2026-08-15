@@ -29,7 +29,7 @@ void discordNotifierInit();   // creates the background task ; call once from se
 // the background task read time_manager's cache from another task).
 // Returns immediately (never blocks). Returns false only if a send
 // is already queued and not yet picked up by the background task.
-bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute);
+bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute, bool isUpdate);
 
 // True while a send/ack-poll cycle is in progress on the Discord side.
 bool discordIsAckPending();

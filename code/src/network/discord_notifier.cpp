@@ -20,6 +20,7 @@ struct DiscordShared {
     int  sendDurationMinutes = 0;
     int  sendHour            = 0;
     int  sendMinute          = 0;
+    bool sendIsUpdate        = false;
     bool ackReceived         = false;
 };
 
@@ -82,21 +83,25 @@ static int _discordRequest(const char* method, const String& url, const String& 
     return code;
 }
 
-// Runs on the worker task. Builds "on mange dans X min (soit à HHhMM)".
-static bool _doSendCallMessage(int duration_minutes, int hour, int minute) {
-    char content[160];
+// Runs on the worker task. Builds either "on mange tout de suite" (0 min)
+// or "on mange dans X min (soit à HHhMM)". isUpdate prefixes the message
+// with "[UPDATE]" when resending after a pause/adjustment.
+static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
+    char content[168];
+    const char* prefix = isUpdate ? "[UPDATE] " : "";
 
     if (duration_minutes <= 0) {
         snprintf(content, sizeof(content),
-                 "🚨 On mange tout de suite! (réponse ici = compris)");
+                 "%s🚨 On mange tout de suite! (réponse ici = compris)",
+                 prefix);
     } else {
         int totalMinutes = hour * 60 + minute + duration_minutes;
         int endHour   = (totalMinutes / 60) % 24;
         int endMinute =  totalMinutes % 60;
 
         snprintf(content, sizeof(content),
-                 "🔔 On mange dans %d minutes (soit à %dh%02d). (réponse ici = compris)",
-                 duration_minutes, endHour, endMinute);
+                 "%s🔔 On mange dans %d minutes, soit à %dh%02d. (réponse ici = compris)",
+                 prefix, duration_minutes, endHour, endMinute);
     }
 
     JsonDocument sendDoc;
@@ -165,6 +170,7 @@ static void _discordTask(void*) {
         DiscordState stateSnapshot;
         bool doSend = false;
         int duration = 0, hour = 0, minute = 0;
+        bool isUpdate = false;
 
         xSemaphoreTake(_mutex, portMAX_DELAY);
         stateSnapshot = _shared.state;
@@ -173,12 +179,13 @@ static void _discordTask(void*) {
             duration = _shared.sendDurationMinutes;
             hour     = _shared.sendHour;
             minute   = _shared.sendMinute;
+            isUpdate = _shared.sendIsUpdate;
             _shared.sendRequested = false;
         }
         xSemaphoreGive(_mutex);
 
         if (doSend) {
-            if (_doSendCallMessage(duration, hour, minute)) {
+            if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
                 _pendingSinceMs = millis();
                 _lastPollMs = millis();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -208,7 +215,7 @@ void discordNotifierInit() {
     xTaskCreatePinnedToCore(_discordTask, "discord_io", 8192, nullptr, 1, nullptr, 0);
 }
 
-bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute) {
+bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute, bool isUpdate) {
     bool accepted = false;
     xSemaphoreTake(_mutex, portMAX_DELAY);
     if (!_shared.sendRequested) {
@@ -216,6 +223,7 @@ bool discordSendCallMessage(int duration_minutes, int current_hour, int current_
         _shared.sendDurationMinutes = duration_minutes;
         _shared.sendHour            = current_hour;
         _shared.sendMinute          = current_minute;
+        _shared.sendIsUpdate        = isUpdate;
         accepted = true;
     }
     xSemaphoreGive(_mutex);
