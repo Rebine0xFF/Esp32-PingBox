@@ -24,6 +24,8 @@ void setup() {
     wifiManagerInit();
     timeManagerInit();
     discordNotifierInit(); // spins up the background Discord I/O task
+
+    buttonsSetLedReady();
 }
 
 // ============================================================
@@ -44,6 +46,8 @@ void loop() {
     // ------------------------------------------------------------
     static bool _callActive = false;
     static int  _callTargetTotalMinutes = 0;
+    static bool _discordSendPending  = false;
+    static int  _pendingSendDuration = 0;
 
     int wheelDuration = encoderDuration;
     if (_callActive) {
@@ -58,8 +62,15 @@ void loop() {
 
     screenMainUpdate(wheelDuration, current_hour, current_minute, _callActive);
 
+    buttonsLedUpdate(_callActive);
     wifiManagerUpdate();
     timeManagerUpdate();
+    // Flush a send that was queued while WiFi/NTP weren't ready yet.
+    // Uses the current (now synced) time
+    if (_discordSendPending && wifiManagerIsConnected() && timeManagerIsSynced()) {
+        _discordSendPending = false;
+        discordSendCallMessage(_pendingSendDuration, current_hour, current_minute);
+    }
 
     // Check if background task received a Discord reaction (limit check to twice a second
     // to prevent FreeRTOS mutex starvation on the background task)
@@ -78,9 +89,9 @@ void loop() {
         _callActive = true;
 
         // Reflect the new state (hourglass, synced wheel) right away instead
-        // of waiting for the next loop() pass. discordSendCallMessage() below
-        // only queues the request for the background task and returns
-        // immediately - it never blocks this render.
+        // of waiting for the next loop() pass. This happens instantly no
+        // matter WiFi/NTP readiness - only the actual Discord call below
+        // may be deferred.
         screenMainUpdate(encoderDuration, current_hour, current_minute, true);
 
         // Reflect physical action instantly on Info Screen
@@ -88,7 +99,14 @@ void loop() {
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
         setLastAction(LastAction::CALLED, timeStr);
 
-        discordSendCallMessage(encoderDuration, current_hour, current_minute);
+        if (wifiManagerIsConnected() && timeManagerIsSynced()) {
+            discordSendCallMessage(encoderDuration, current_hour, current_minute);
+        } else {
+            // Network/time not ready yet: queue it, the pending-send block
+            // below will flush it as soon as both become ready.
+            _discordSendPending  = true;
+            _pendingSendDuration = encoderDuration;
+        }
     }
 
     // ------------------------------------------------------------
