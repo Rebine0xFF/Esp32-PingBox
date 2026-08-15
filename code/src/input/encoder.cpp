@@ -16,6 +16,14 @@ static bool     _switchWasDown    = false;
 static uint32_t _lastSwitchEdgeMs = 0;
 static const uint32_t SWITCH_DEBOUNCE_MS = 200;
 
+// True once encoderSwitchPressed() has fired for the physical press
+// currently in progress (e.g. to trigger a pause). Prevents the
+// hold-to-reset logic below from zeroing the value right back out on
+// the following loop() iterations, while the same press is still held.
+// Cleared as soon as the switch is released, so the very next press
+// behaves as a normal reset-to-zero again.
+static bool _switchClaimedThisPress = false;
+
 
 void encoderInit() {
 
@@ -33,8 +41,13 @@ void encoderInit() {
 
 int encoderGetMinutes() {
 
-    if (digitalRead(PIN_ENC_SW) == LOW) {
+    bool switchDown = (digitalRead(PIN_ENC_SW) == LOW);
+
+    if (switchDown && !_switchClaimedThisPress) {
         enc.setCount(0);
+    }
+    if (!switchDown) {
+        _switchClaimedThisPress = false; // released: next press starts a fresh session
     }
 
     int raw = (int)enc.getCount();
@@ -71,6 +84,7 @@ bool encoderSwitchPressed() {
         if (now - _lastSwitchEdgeMs > SWITCH_DEBOUNCE_MS) {
             _lastSwitchEdgeMs = now;
             pressed = true;
+            _switchClaimedThisPress = true; // suppress encoderGetMinutes()'s reset for the rest of this press
         }
     }
     _switchWasDown = down;
