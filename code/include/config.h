@@ -62,7 +62,6 @@ constexpr uint32_t TIME_UPDATE_INTERVAL_MS  = 1000;      // throttle for re-form
 // ------------------------------------------------------------
 
 constexpr char DISCORD_API_BASE[]  = "https://discord.com/api/v10";
-constexpr char DISCORD_ACK_EMOJI[] = "%E2%9C%85";
 
 constexpr uint32_t DISCORD_ACK_POLL_INTERVAL_MS = 3000;
 constexpr uint32_t DISCORD_ACK_TIMEOUT_MS       = 600000;
