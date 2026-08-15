@@ -159,10 +159,10 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
     display.setDrawColor(1);
 
     // --- Heure de fin ---
-    display.setFont(u8g2_font_profont10_tr);
+    display.setFont(u8g2_font_profont12_tr);
     snprintf(str_buf, sizeof(str_buf), "-> %dh%02d", end_hour, end_minute);
     sw = display.getStrWidth(str_buf);
-    display.drawStr(73, 23, str_buf);
+    display.drawStr(78, 23, str_buf);
 
     
     hourglassAnimDraw(display, callActive);
