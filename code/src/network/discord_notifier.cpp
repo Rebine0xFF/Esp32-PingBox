@@ -37,7 +37,6 @@ static void _setServerStatus(DiscordServerStatus s) {
 
 // Fields only ever touched by the background worker task - no locking needed.
 static String   _pendingMessageId  = "";
-static int      _reactionBaseline  = 0;
 static uint32_t _pendingSinceMs    = 0;
 static uint32_t _lastPollMs        = 0;
 
@@ -85,14 +84,20 @@ static int _discordRequest(const char* method, const String& url, const String& 
 
 // Runs on the worker task. Builds "on mange dans X min (soit à HHhMM)".
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute) {
-    int totalMinutes = hour * 60 + minute + duration_minutes;
-    int endHour   = (totalMinutes / 60) % 24;
-    int endMinute =  totalMinutes % 60;
-
     char content[160];
-    snprintf(content, sizeof(content),
-             "🔔 On mange dans %d minutes (soit à %dh%02d). Réagis avec ✅ pour dire que tu as vu.",
-             duration_minutes, endHour, endMinute);
+
+    if (duration_minutes <= 0) {
+        snprintf(content, sizeof(content),
+                 "🚨 On mange tout de suite! (réponse ici = compris)");
+    } else {
+        int totalMinutes = hour * 60 + minute + duration_minutes;
+        int endHour   = (totalMinutes / 60) % 24;
+        int endMinute =  totalMinutes % 60;
+
+        snprintf(content, sizeof(content),
+                 "🔔 On mange dans %d minutes (soit à %dh%02d). (réponse ici = compris)",
+                 duration_minutes, endHour, endMinute);
+    }
 
     JsonDocument sendDoc;
     sendDoc["content"] = content;
@@ -115,19 +120,13 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute) {
     if (!messageId) return false;
     _pendingMessageId = messageId;
 
-    String reactUrl = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID
-                     + "/messages/" + _pendingMessageId + "/reactions/" + DISCORD_ACK_EMOJI + "/@me";
-    String reactResponse;
-    int seedCode = _discordRequest("PUT", reactUrl, "", reactResponse);
-    _reactionBaseline = (seedCode == 204) ? 1 : 0;
-
     return true;
 }
 
 // Runs on the worker task.
 static void _doPollAck() {
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID
-               + "/messages/" + _pendingMessageId + "/reactions/" + DISCORD_ACK_EMOJI;
+               + "/messages?after=" + _pendingMessageId + "&limit=5";
     String response;
     int code = _discordRequest("GET", url, "", response);
     if (code != 200) {
@@ -140,8 +139,17 @@ static void _doPollAck() {
     if (deserializeJson(doc, response) != DeserializationError::Ok) return;
     JsonArray arr = doc.as<JsonArray>();
 
-    if ((int)arr.size() > _reactionBaseline) {
-        // Just flag the event. The UI thread (main loop) will handle the screen update.
+    bool humanReplyFound = false;
+    for (JsonObject msg : arr) {
+        // The "bot" field is only present (and true) for bot authors
+        bool isBot = msg["author"]["bot"] | false;
+        if (!isBot) {
+            humanReplyFound = true;
+            break;
+        }
+    }
+
+    if (humanReplyFound) {
         xSemaphoreTake(_mutex, portMAX_DELAY);
         _shared.ackReceived = true;
         _shared.state = DiscordState::IDLE;
