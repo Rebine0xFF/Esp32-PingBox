@@ -4,9 +4,16 @@
 static uint32_t _lastSendPress = 0;
 static const uint32_t BTN_DEBOUNCE_MS = 200;
 
+static const uint32_t LED_BLINK_INTERVAL_MS = 1000;
+static uint32_t _lastBlinkMs   = 0;
+static bool     _ledBlinkState = false;
+
 
 void buttonsInit() {
     pinMode(PIN_BTN_SEND, INPUT_PULLUP);
+    // Off until buttonsSetLedReady() is called at the end of setup()
+    pinMode(PIN_LED_BTN, OUTPUT);
+    digitalWrite(PIN_LED_BTN, LOW);
 }
 
 bool buttonSendPressed() {
@@ -18,4 +25,25 @@ bool buttonSendPressed() {
         }
     }
     return false;
+}
+
+void buttonsSetLedReady() {
+    digitalWrite(PIN_LED_BTN, HIGH);
+}
+
+void buttonsLedUpdate(bool callActive) {
+    if (!callActive) {
+        // Idle/ready state: solid on. Also resets the blink phase so the
+        // next call always starts its blink cycle from the same edge.
+        digitalWrite(PIN_LED_BTN, HIGH);
+        _ledBlinkState = true;
+        return;
+    }
+
+    uint32_t now = millis();
+    if (now - _lastBlinkMs >= LED_BLINK_INTERVAL_MS) {
+        _lastBlinkMs = now;
+        _ledBlinkState = !_ledBlinkState;
+        digitalWrite(PIN_LED_BTN, _ledBlinkState ? HIGH : LOW);
+    }
 }
