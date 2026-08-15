@@ -44,26 +44,56 @@ void loop() {
     //  acknowledging the message on Discord only updates the "last
     //  action" display, it never stops this countdown.
     // ------------------------------------------------------------
-    static bool _callActive = false;
+    enum class LoopCallState { IDLE, RUNNING, PAUSED };
+    static LoopCallState _callState = LoopCallState::IDLE;
     static int  _callTargetTotalMinutes = 0;
+
+    // Set when the send button is pressed while WiFi/NTP aren't ready yet.
+    // The actual Discord call is retried every loop() until both are ready.
     static bool _discordSendPending  = false;
     static int  _pendingSendDuration = 0;
+    static bool _pendingIsUpdate     = false;
+
+    // True only for a timed (non-immediate) call queued before NTP synced.
+    // Tells the flush block below it must also recompute _callTargetTotalMinutes
+    // once real time is known, instead of leaving it based on the stale
+    // (pre-sync) clock used at button-press time.
     static bool _pendingNeedsResync = false;
 
     int wheelDuration = encoderDuration;
-    if (_callActive) {
+    CallState renderState = CallState::NONE;
+
+    if (_callState == LoopCallState::RUNNING) {
         int currentTotalMinutes = current_hour * 60 + current_minute;
         int remaining = _callTargetTotalMinutes - currentTotalMinutes;
-        if (remaining <= 0) {
-            remaining = 0;
-            _callActive = false; // target time reached
+        if (remaining < 0) remaining = 0;
+
+        if (encoderSwitchPressed()) {
+            // Pause: freeze on the current remaining value and unlock the
+            // encoder, seeded from that value so it continues adjustment
+            // from where the countdown stood.
+            _callState = LoopCallState::PAUSED;
+            encoderSetMinutes(remaining);
+            wheelDuration = remaining;
+            renderState = CallState::PAUSED;
+        } else if (remaining <= 0) {
+            _callState = LoopCallState::IDLE; // target time reached
+            wheelDuration = 0;
+            renderState = CallState::NONE;
+        } else {
+            wheelDuration = remaining;
+            renderState = CallState::RUNNING;
         }
-        wheelDuration = remaining;
+    } else if (_callState == LoopCallState::PAUSED) {
+        // Frozen: the encoder freely adjusts the paused duration.
+        wheelDuration = encoderDuration;
+        renderState = CallState::PAUSED;
     }
+    // LoopCallState::IDLE: wheelDuration/renderState already default to the
+    // encoder value / CallState::NONE set above.
 
-    screenMainUpdate(wheelDuration, current_hour, current_minute, _callActive);
-
-    buttonsLedUpdate(_callActive);
+    screenMainUpdate(wheelDuration, current_hour, current_minute, renderState);
+    buttonsLedUpdate(_callState == LoopCallState::RUNNING);
     wifiManagerUpdate();
     timeManagerUpdate();
     // Flush a send that was queued while WiFi/NTP weren't ready yet.
@@ -81,7 +111,7 @@ void loop() {
             _pendingNeedsResync = false;
         }
 
-        discordSendCallMessage(_pendingSendDuration, syncedHour, syncedMinute);
+        discordSendCallMessage(_pendingSendDuration, syncedHour, syncedMinute, _pendingIsUpdate);
     }
 
     // Check if background task received a Discord reaction (limit check to twice a second
@@ -97,27 +127,38 @@ void loop() {
     }
 
     if (buttonSendPressed()) {
+        // Resending while paused is an update to the already-sent message,
+        // rather than a brand new call.
+        bool isUpdate  = (_callState == LoopCallState::PAUSED);
         bool immediate = (encoderDuration <= 0);
 
         if (!immediate) {
             _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-            _callActive = true;
+            _callState = LoopCallState::RUNNING;
 
-            screenMainUpdate(encoderDuration, current_hour, current_minute, true);
+            // Reflect the new state (hourglass, synced wheel) right away instead
+            // of waiting for the next loop() pass. Identical whether this is a
+            // fresh call or an update resend after a pause.
+            screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
+        } else {
+            // Immediate (0 min)
+            _callState = LoopCallState::IDLE;
         }
-        // Immediate (0 min)
+
+        // Reflect physical action instantly on Info Screen either way
         char timeStr[6];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
         setLastAction(LastAction::CALLED, timeStr);
 
         if (wifiManagerIsConnected() && timeManagerIsSynced()) {
-            discordSendCallMessage(encoderDuration, current_hour, current_minute);
+            discordSendCallMessage(encoderDuration, current_hour, current_minute, isUpdate);
         } else {
             // Network/time not ready yet: queue it, the pending-send block
             // below will flush it as soon as both become ready.
             _discordSendPending  = true;
             _pendingSendDuration = encoderDuration;
             _pendingNeedsResync  = !immediate;
+            _pendingIsUpdate     = isUpdate;
         }
     }
 
