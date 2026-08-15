@@ -48,6 +48,7 @@ void loop() {
     static int  _callTargetTotalMinutes = 0;
     static bool _discordSendPending  = false;
     static int  _pendingSendDuration = 0;
+    static bool _pendingNeedsResync = false;
 
     int wheelDuration = encoderDuration;
     if (_callActive) {
@@ -69,7 +70,18 @@ void loop() {
     // Uses the current (now synced) time
     if (_discordSendPending && wifiManagerIsConnected() && timeManagerIsSynced()) {
         _discordSendPending = false;
-        discordSendCallMessage(_pendingSendDuration, current_hour, current_minute);
+
+        int syncedHour   = timeManagerGetHour();
+        int syncedMinute = timeManagerGetMinute();
+
+        if (_pendingNeedsResync) {
+            // Correct the countdown target now that real time is known,
+            // instead of leaving it computed from the pre-sync (00:00-ish) clock
+            _callTargetTotalMinutes = syncedHour * 60 + syncedMinute + _pendingSendDuration;
+            _pendingNeedsResync = false;
+        }
+
+        discordSendCallMessage(_pendingSendDuration, syncedHour, syncedMinute);
     }
 
     // Check if background task received a Discord reaction (limit check to twice a second
@@ -84,17 +96,16 @@ void loop() {
         }
     }
 
-    if (buttonSendPressed() && encoderDuration > 0) {
-        _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-        _callActive = true;
+    if (buttonSendPressed()) {
+        bool immediate = (encoderDuration <= 0);
 
-        // Reflect the new state (hourglass, synced wheel) right away instead
-        // of waiting for the next loop() pass. This happens instantly no
-        // matter WiFi/NTP readiness - only the actual Discord call below
-        // may be deferred.
-        screenMainUpdate(encoderDuration, current_hour, current_minute, true);
+        if (!immediate) {
+            _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
+            _callActive = true;
 
-        // Reflect physical action instantly on Info Screen
+            screenMainUpdate(encoderDuration, current_hour, current_minute, true);
+        }
+        // Immediate (0 min)
         char timeStr[6];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
         setLastAction(LastAction::CALLED, timeStr);
@@ -106,6 +117,7 @@ void loop() {
             // below will flush it as soon as both become ready.
             _discordSendPending  = true;
             _pendingSendDuration = encoderDuration;
+            _pendingNeedsResync  = !immediate;
         }
     }
 
