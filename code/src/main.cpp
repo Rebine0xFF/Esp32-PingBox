@@ -80,6 +80,22 @@ void loop() {
             _callState = LoopCallState::IDLE; // target time reached
             wheelDuration = 0;
             renderState = CallState::NONE;
+
+            // The countdown just naturally ran out: fire the "meal is now"
+            // notification, on top of the initial "meal in X minutes" one
+            // sent at launch. Same immediate-message path as the 0-min case.
+            char timeStr[6];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
+            setLastAction(LastAction::CALLED, timeStr);
+
+            if (wifiManagerIsConnected() && timeManagerIsSynced()) {
+                discordSendCallMessage(0, current_hour, current_minute, false);
+            } else {
+                _discordSendPending  = true;
+                _pendingSendDuration = 0;
+                _pendingNeedsResync  = false;
+                _pendingIsUpdate     = false;
+            }
         } else {
             wheelDuration = remaining;
             renderState = CallState::RUNNING;
