@@ -5,5 +5,10 @@
 //  Animated content: timer, visual feedback
 // ============================================================
 
+// NONE    - no call in progress, wheel follows the encoder.
+// RUNNING - countdown active, hourglass animation shown.
+// PAUSED  - countdown frozen, pause icon shown instead of the hourglass.
+enum class CallState { NONE, RUNNING, PAUSED };
+
 void screenMainInit();
-void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, bool callActive);
+void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, CallState callState);

@@ -36,6 +36,12 @@ static int pixel_count, line_count, text_count;
 static char str_buf[16];   // buffer générique pour itoa / sprintf
 
 
+static void _drawPauseIcon(U8G2& display) {
+    display.drawBox(5, 3, 5, 18);
+    display.drawBox(14, 3, 5, 18);
+}
+
+
 
 // ------------------------------------------------------------
 
@@ -60,7 +66,7 @@ void screenMainInit() {
 // ------------------------------------------------------------
 
 
-void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, bool callActive) {
+void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, CallState callState) {
     // ── Mise à l'échelle interne ──────────────────────────────
     //  On travaille en "dixièmes de minute" (×10) pour conserver
     //  la même arithmétique entière que l'original (qui était ×10 pour les %)
@@ -165,7 +171,12 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
     display.drawStr(78, 23, str_buf);
 
     
-    hourglassAnimDraw(display, callActive);
+    if (callState == CallState::PAUSED) {
+        hourglassAnimDraw(display, false); // stop/reset the hourglass anim
+        _drawPauseIcon(display);
+    } else {
+        hourglassAnimDraw(display, callState == CallState::RUNNING);
+    }
 
     display.sendBuffer();
 }
