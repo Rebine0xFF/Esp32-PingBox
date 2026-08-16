@@ -16,9 +16,7 @@ static const uint32_t SEVENTY_YEARS_UNIX_OFFSET = 2208988800UL; // 1900 -> 1970
 static WiFiUDP _udp;
 static uint8_t _packetBuffer[NTP_PACKET_SIZE];
 
-// The NTP server hostname is resolved to an IP address only once and
-// cached. beginPacket(IPAddress, port) then never triggers a DNS
-// lookup again, avoiding a blocking resolution on every retry.
+// Resolve NTP hostname once and cache the IP to avoid blocking DNS lookups on retries.
 static IPAddress _serverIP;
 static bool _serverResolved = false;
 

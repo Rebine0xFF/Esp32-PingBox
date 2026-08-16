@@ -11,7 +11,7 @@ static bool     _ledBlinkState = false;
 
 void buttonsInit() {
     pinMode(PIN_BTN_SEND, INPUT_PULLUP);
-    // Off until buttonsSetLedReady() is called at the end of setup()
+    // LED off until buttonsSetLedReady() is called
     pinMode(PIN_LED_BTN, OUTPUT);
     digitalWrite(PIN_LED_BTN, LOW);
 }
@@ -33,8 +33,7 @@ void buttonsSetLedReady() {
 
 void buttonsLedUpdate(bool callActive) {
     if (!callActive) {
-        // Idle/ready state: solid on. Also resets the blink phase so the
-        // next call always starts its blink cycle from the same edge.
+        // Idle: solid on; reset blink phase to a known state.
         digitalWrite(PIN_LED_BTN, HIGH);
         _ledBlinkState = true;
         return;

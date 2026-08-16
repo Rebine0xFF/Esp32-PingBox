@@ -48,10 +48,8 @@ void loop() {
     int current_minute  = timeManagerGetMinute();
 
     // ------------------------------------------------------------
-    //  Call countdown - owned by main.cpp, driven purely by the real
-    //  clock. Independent from Discord's own send/ack state:
-    //  acknowledging the message on Discord only updates the "last
-    //  action" display, it never stops this countdown.
+    //  Call countdown: driven by the real clock and independent of Discord acks.
+    //  Discord acknowledgments update the "last action" display only.
     // ------------------------------------------------------------
     enum class LoopCallState { IDLE, RUNNING, PAUSED };
     static LoopCallState _callState = LoopCallState::IDLE;
@@ -63,10 +61,8 @@ void loop() {
     static int  _pendingSendDuration = 0;
     static bool _pendingIsUpdate     = false;
 
-    // True only for a timed (non-immediate) call queued before NTP synced.
-    // Tells the flush block below it must also recompute _callTargetTotalMinutes
-    // once real time is known, instead of leaving it based on the stale
-    // (pre-sync) clock used at button-press time.
+    // Set when a timed call was queued before NTP sync. Flush will recompute
+    // the call target using the synced clock instead of the stale pre-sync time.
     static bool _pendingNeedsResync = false;
 
     int wheelDuration = encoderDuration;
@@ -78,9 +74,7 @@ void loop() {
         if (remaining < 0) remaining = 0;
 
         if (encoderSwitchPressed()) {
-            // Pause: freeze on the current remaining value and unlock the
-            // encoder, seeded from that value so it continues adjustment
-            // from where the countdown stood.
+            // Pause: freeze remaining time and seed encoder for adjustments.
             _callState = LoopCallState::PAUSED;
             encoderSetMinutes(remaining);
             wheelDuration = remaining;
@@ -92,9 +86,7 @@ void loop() {
             renderState = CallState::NONE;
             LOG_INFO("MAIN", "Countdown reached zero, sending meal-time notification");
 
-            // The countdown just naturally ran out: fire the "meal is now"
-            // notification, on top of the initial "meal in X minutes" one
-            // sent at launch. Same immediate-message path as the 0-min case.
+            // Countdown reached zero: send immediate "meal is now" notification.
             char timeStr[6];
             snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
             setLastAction(LastAction::CALLED, timeStr);
@@ -143,8 +135,7 @@ void loop() {
         discordSendCallMessage(_pendingSendDuration, syncedHour, syncedMinute, _pendingIsUpdate);
     }
 
-    // Check if background task received a Discord reaction (limit check to twice a second
-    // to prevent FreeRTOS mutex starvation on the background task)
+    // Poll for Discord ACK at 500ms intervals to avoid mutex contention with the background task.
     static uint32_t lastAckCheck = 0;
     if (millis() - lastAckCheck > 500) {
         lastAckCheck = millis();
@@ -167,16 +158,14 @@ void loop() {
             _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
             _callState = LoopCallState::RUNNING;
 
-            // Reflect the new state (hourglass, synced wheel) right away instead
-            // of waiting for the next loop() pass. Identical whether this is a
-            // fresh call or an update resend after a pause.
+            // Update main display immediately to show running hourglass.
             screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
         } else {
             // Immediate (0 min)
             _callState = LoopCallState::IDLE;
         }
 
-        // Reflect physical action instantly on Info Screen either way
+        // Update 'last action' display immediately.
         char timeStr[6];
         snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
         setLastAction(LastAction::CALLED, timeStr);
@@ -194,12 +183,8 @@ void loop() {
     }
 
     // ------------------------------------------------------------
-    //  Screen Info (Software I2C - expensive bit-banging)
-    //
-    //  Rules:
-    //  1. Only update when something changes (time, status, action, etc.)
-    //  2. Deferred until the encoder has been idle for ENCODER_IDLE_MS,
-    //     to avoid stuttering the animated main wheel.
+    //  Info screen (software I2C - slow): update only on change and
+    //  deferred until encoder idle to avoid stuttering the main animation.
     // ------------------------------------------------------------
     static char lastTime[6]   = "";
     static char lastDay[4]    = "";

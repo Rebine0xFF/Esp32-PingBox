@@ -28,16 +28,14 @@ struct DiscordShared {
 static DiscordShared     _shared;
 static SemaphoreHandle_t _mutex = nullptr;
 
-// Lock-free status flag, kept separate from the mutex-guarded _shared
-// struct : only the Discord task writes it, only the UI thread reads it,
-// so a single atomic int is enough to guarantee cross-core visibility.
+// Lock-free server status flag: written by Discord task, read by UI thread. Atomic int ensures cross-core visibility.
 static std::atomic<int> _serverStatus{(int)DiscordServerStatus::PAUSED};
 
 static void _setServerStatus(DiscordServerStatus s) {
     _serverStatus.store((int)s, std::memory_order_relaxed);
 }
 
-// Fields only ever touched by the background worker task - no locking needed.
+// Fields only used by the background worker task (no locking).
 static String   _pendingMessageId  = "";
 static uint32_t _pendingSinceMs    = 0;
 static uint32_t _lastPollMs        = 0;
@@ -45,9 +43,7 @@ static uint32_t _lastPollMs        = 0;
 // ------------------------------------------------------------
 
 // Single blocking HTTPS request. Runs ONLY on the worker task.
-// NOTE: certificate validation is skipped (setInsecure()) : accepted
-// trade-off to avoid maintaining a pinned cert against Cloudflare's
-// rotating certificates.
+// Certificate validation is skipped (setInsecure()) to avoid pinning against Cloudflare's rotating certs.
 static int _discordRequest(const char* method, const String& url, const String& payload, String& response) {
     WiFiClientSecure client;
     client.setInsecure();
@@ -84,9 +80,7 @@ static int _discordRequest(const char* method, const String& url, const String& 
     return code;
 }
 
-// Runs on the worker task. Builds either "on mange tout de suite" (0 min)
-// or "on mange dans X min (soit à HHhMM)". isUpdate prefixes the message
-// with "[UPDATE]" when resending after a pause/adjustment.
+// Build message content for the send worker. isUpdate prefixes with "[UPDATE]".
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char content[168];
     const char* prefix = isUpdate ? "[UPDATE] " : "";
@@ -220,7 +214,7 @@ static void _discordTask(void*) {
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(200)); // worker cadence ; real timing is millis()-based above
+        vTaskDelay(pdMS_TO_TICKS(200)); // worker cadence; main timing uses millis() above
     }
 }
 

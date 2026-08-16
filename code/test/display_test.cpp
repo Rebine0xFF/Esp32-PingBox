@@ -8,7 +8,6 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C display1(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 // SCREEN 2: Software I2C (Pins 25/26) - Optimized for STATIC content
 U8G2_SH1106_128X64_NONAME_F_SW_I2C display2(U8G2_R0, /* clock=*/ 26, /* data=*/ 25, /* reset=*/ U8X8_PIN_NONE);
 
-// Animation variables
 int xPos = 0;
 int direction = 1;
 
@@ -38,26 +37,21 @@ void loop() {
     // ---------------------------------------------------
     display1.clearBuffer();
     
-    // Draw moving elements
     display1.setFont(u8g2_font_ncenB14_tr);
     display1.drawStr(xPos, 35, "FAST");
-    
-    // Draw a moving bar at the bottom
     display1.drawBox(0, 55, xPos + 20, 5);
     
     display1.sendBuffer();
 
-    // Logic for movement
     xPos += (2 * direction);
     if (xPos > 80 || xPos < 0) {
         direction = -direction;
     }
 
-    // Notice: We are NOT calling display2.sendBuffer() here.
-    // This keeps the loop running at maximum speed.
+    // Keep display2 static to avoid slowing the loop.
 
     static unsigned long lastUpdate = 0;
-    if (millis() - lastUpdate > 3000) { // Update only once per 3 second
+    if (millis() - lastUpdate > 3000) { // Update once every 3s
         display2.clearBuffer();
         display2.setCursor(20, 50);
         display2.print(millis() / 1000); // Show seconds uptime
