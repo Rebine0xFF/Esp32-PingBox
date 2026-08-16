@@ -10,22 +10,31 @@
 #include "network/time_manager.h"
 #include "network/discord_notifier.h"
 #include "config.h"
+#include "utils/logger.h"
 
 // ============================================================
 //  SETUP
 // ============================================================
 
 void setup() {
+    LOG_BEGIN();
+    LOG_LINE();
+    LOG_INFO("MAIN", "PingBox booting up...");
+
     screenMainInit();
     screenInfoInit();
     encoderInit();
     buttonsInit();
+    LOG_OK("MAIN", "Displays and inputs initialized");
 
     wifiManagerInit();
     timeManagerInit();
     discordNotifierInit(); // spins up the background Discord I/O task
+    LOG_OK("MAIN", "Network stack initialized (WiFi/NTP/Discord)");
 
     buttonsSetLedReady();
+    LOG_LINE();
+    LOG_INFO("MAIN", "Setup complete, entering main loop");
 }
 
 // ============================================================
@@ -76,10 +85,12 @@ void loop() {
             encoderSetMinutes(remaining);
             wheelDuration = remaining;
             renderState = CallState::PAUSED;
+            LOG_INFO("MAIN", "Countdown paused at %d min remaining", remaining);
         } else if (remaining <= 0) {
             _callState = LoopCallState::IDLE; // target time reached
             wheelDuration = 0;
             renderState = CallState::NONE;
+            LOG_INFO("MAIN", "Countdown reached zero, sending meal-time notification");
 
             // The countdown just naturally ran out: fire the "meal is now"
             // notification, on top of the initial "meal in X minutes" one
@@ -91,6 +102,7 @@ void loop() {
             if (wifiManagerIsConnected() && timeManagerIsSynced()) {
                 discordSendCallMessage(0, current_hour, current_minute, false);
             } else {
+                LOG_WARN("MAIN", "Network/time not ready, queuing send for later flush");
                 _discordSendPending  = true;
                 _pendingSendDuration = 0;
                 _pendingNeedsResync  = false;
@@ -116,6 +128,7 @@ void loop() {
     // Uses the current (now synced) time
     if (_discordSendPending && wifiManagerIsConnected() && timeManagerIsSynced()) {
         _discordSendPending = false;
+        LOG_INFO("MAIN", "Flushing queued Discord send (network/time now ready)");
 
         int syncedHour   = timeManagerGetHour();
         int syncedMinute = timeManagerGetMinute();
@@ -136,6 +149,7 @@ void loop() {
     if (millis() - lastAckCheck > 500) {
         lastAckCheck = millis();
         if (discordCheckAndClearAck()) {
+            LOG_OK("MAIN", "Discord acknowledgment received");
             char timeStr[6];
             timeManagerGetTimeString(timeStr, sizeof(timeStr));
             setLastAction(LastAction::APPROVED, timeStr);
@@ -147,6 +161,7 @@ void loop() {
         // rather than a brand new call.
         bool isUpdate  = (_callState == LoopCallState::PAUSED);
         bool immediate = (encoderDuration <= 0);
+        LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d, immediate=%d)", encoderDuration, isUpdate, immediate);
 
         if (!immediate) {
             _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
