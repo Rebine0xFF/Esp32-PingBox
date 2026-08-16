@@ -24,7 +24,7 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   pinMode(PIN_SW, INPUT_PULLUP);
 
-  // Encoder Configuration
+  // Configure encoder
   ESP32Encoder::useInternalWeakPullResistors = puType::up;
   encoder.attachHalfQuad(PIN_DT, PIN_CLK);
   encoder.setCount(0);
@@ -33,7 +33,6 @@ void setup() {
 void loop() {
   long currentPosition = encoder.getCount();
 
-  // 1. Rotation Detection
   if (currentPosition > lastPosition) {
     Serial.println("Right ->");
     flash(1, 50); // 1 quick flash
@@ -45,11 +44,10 @@ void loop() {
     lastPosition = currentPosition;
   }
 
-  // 2. Button Detection (SW)
   if (digitalRead(PIN_SW) == LOW) {
     Serial.println("Button Pressed");
     flash(1, 400); // 1 long flash
-    while(digitalRead(PIN_SW) == LOW); // Wait for release
+    while(digitalRead(PIN_SW) == LOW);
   }
 
   delay(10); 

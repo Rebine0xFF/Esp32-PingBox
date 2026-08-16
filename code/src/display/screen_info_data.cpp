@@ -31,7 +31,7 @@ const unsigned char* image_LAST_ACTION_ICON_bits   = _no_history;
 
 
 // Status icons
-// Because sizes are diffzrent, we store them in a struct with their dimensions
+// Icons have different sizes; store dimensions in Icon struct
 static const Icon ICON_OK     = {_ok_status,     9, 6};
 static const Icon ICON_PAUSED = {_paused_status, 12, 5};
 static const Icon ICON_ERROR  = {_error_status,  9, 8};

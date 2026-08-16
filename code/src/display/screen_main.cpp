@@ -13,27 +13,27 @@ static U8G2_SH1106_128X64_NONAME_F_HW_I2C display(
 
 
 
-// ─── Géométrie de la roue ──────────────────────────────────────
-static const int CENTER_X       = 64;   // centre horizontal (milieu écran)
-static const int CENTER_Y       = 120;  // centre vertical hors écran → effet arc
-static const int RADIUS_PIXEL   = 92;   // rayon des petites graduations (pixels)
-static const int RADIUS_LINE    = 87;   // rayon intérieur des grandes graduations (lignes)
-static const int RADIUS_TEXT    = 75;   // rayon des labels numériques
+// ─── Wheel geometry ──────────────────────────────────────
+static const int CENTER_X       = 64;   // horizontal center (screen middle)
+static const int CENTER_Y       = 120;  // vertical center (off-screen) -> arc effect
+static const int RADIUS_PIXEL   = 92;   // radius for small ticks (pixels)
+static const int RADIUS_LINE    = 87;   // inner radius for major tick lines
+static const int RADIUS_TEXT    = 75;   // radius for numeric labels
 
-// ─── Tables de précalcul sin/cos ──────────────────────────────
-//  Évite les appels sin/cos dans la loop → gain de performance significatif
+// ─── Precomputed sin/cos lookup tables ──────────────────────────────
+//  Avoid sin/cos calls in the loop -> significant performance gain
 static uint8_t lut_x[180];
 static uint8_t lut_y[180];
 
-// ─── Buffers de rendu ─────────────────────────────────────────
-//  On stocke ce qu'on veut dessiner AVANT d'entrer dans le rendu
-//  (nécessaire en u8g1, conservé ici pour la clarté et la perf)
+// ─── Rendering buffers ─────────────────────────────────────────
+//  Store drawing primitives before rendering
+//  (required by u8g1; kept for clarity and performance)
 static int pixel_buf[50][2];
 static int line_buf[10][4];
 static int text_buf[10][3];
 static int pixel_count, line_count, text_count;
 
-static char str_buf[16];   // buffer générique pour itoa / sprintf
+static char str_buf[16];   // generic buffer for itoa / sprintf
 
 
 static void _drawPauseIcon(U8G2& display) {
@@ -54,7 +54,7 @@ void screenMainInit() {
     display.clearBuffer();
     display.sendBuffer();
 
-    // Précalcul des positions angulaires (fait une seule fois au démarrage)
+    // Precompute angular positions (done once at startup)
     for (int i = 0; i < 180; i++) {
         lut_x[i] = (uint8_t)(sin(radians(i - 90)) * RADIUS_PIXEL + CENTER_X);
         lut_y[i] = (uint8_t)(-cos(radians(i - 90)) * RADIUS_PIXEL + CENTER_Y);
@@ -67,39 +67,39 @@ void screenMainInit() {
 
 
 void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, CallState callState) {
-    // ── Mise à l'échelle interne ──────────────────────────────
-    //  On travaille en "dixièmes de minute" (×10) pour conserver
-    //  la même arithmétique entière que l'original (qui était ×10 pour les %)
-    //  Plage : 0–90 min → 0–900 en interne
+    // ── Internal scaling ──────────────────────────────
+    //  Work in "tenths of a minute" (×10) to preserve the same integer math as the original
+    //  (original used ×10 for percentages)
+    //  Range: 0–90 min -> 0–900 internally
     int internal = duration_minutes * 10;
 
-    // ── Calcul de l'heure de fin ──────────────────────────────
+    // ── End time calculation ──────────────────────────────
     int total_end_minutes = current_hour * 60 + current_minute + duration_minutes;
     int end_hour   = (total_end_minutes / 60) % 24;
     int end_minute =  total_end_minutes % 60;
 
-    // ── Calcul des graduations ────────────────────────────────
+    // ── Tick calculations ────────────────────────────────
     pixel_count = line_count = text_count = 0;
 
     for (int i = -48; i <= 48; i += 3) {
 
-        // Angle réel de cette graduation sur la roue
+        // Actual angle of this tick on the wheel
         int angle = i + (internal * 3 / 10) % 3;
 
-        // Valeur numérique correspondante (en minutes)
+        // Numeric value (minutes)
         int tick_val = (int)round(internal / 10.0 + angle / 3.0);
 
-        // Position sur l'arc (lecture dans la LUT)
+        // Position on the arc (read from LUT)
         int px = lut_x[angle + 90];
         int py = lut_y[angle + 90];
 
-        // Hors écran → on ignore
+        // Off-screen -> ignore
         if (px < 0 || px >= 128 || py < 0 || py >= 64) continue;
-        // Hors plage 0–90 min → on ignore
+        // Out of range 0–90 min -> ignore
         if (tick_val < 0 || tick_val > 90) continue;
 
         if (tick_val % 5 == 0) {
-            // ── Grande graduation : ligne + label ──────────────
+            // ── Major tick: line + label ──────────────
             float angle_rad = radians(angle);
             int lx = (int)(sin(angle_rad) * RADIUS_LINE + CENTER_X);
             int ly = (int)(-cos(angle_rad) * RADIUS_LINE + CENTER_Y);
@@ -118,28 +118,28 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
             text_count++;
 
         } else {
-            // ── Petite graduation : pixel ──────────────────────
+            // ── Minor tick: pixel ──────────────────────
             pixel_buf[pixel_count][0] = px;
             pixel_buf[pixel_count][1] = py;
             pixel_count++;
         }
     }
 
-    // ── Rendu ─────────────────────────────────────────────────
+    // ── Rendering ─────────────────────────────────────────────────
     display.clearBuffer();
 
-    // --- Petites graduations (pixels) ---
+    // --- Minor ticks (pixels) ---
     for (int i = 0; i < pixel_count; i++) {
         display.drawPixel(pixel_buf[i][0], pixel_buf[i][1]);
     }
 
-    // --- Grandes graduations (lignes) ---
+    // --- Major ticks (lines) ---
     for (int i = 0; i < line_count; i++) {
         display.drawLine(line_buf[i][0], line_buf[i][1],
                          line_buf[i][2], line_buf[i][3]);
     }
 
-    // --- Labels numériques ---
+    // --- Numeric labels ---
     display.setFont(u8g2_font_6x10_tr);
     for (int i = 0; i < text_count; i++) {
         itoa(text_buf[i][2], str_buf, 10);
@@ -149,22 +149,22 @@ void screenMainUpdate(int duration_minutes, int current_hour, int current_minute
                         str_buf);
     }
 
-    // --- Valeur centrale : durée sélectionnée ---
+    // --- Center value: selected duration ---
     display.setFont(u8g2_font_profont17_tr);
     snprintf(str_buf, sizeof(str_buf), "%d min", duration_minutes);
     int sw = display.getStrWidth(str_buf);
 
     display.setDrawColor(1);
-    display.drawRBox(CENTER_X - (sw + 6) / 2, 0, sw + 6, 13, 2);   // fond arrondi
+    display.drawRBox(CENTER_X - (sw + 6) / 2, 0, sw + 6, 13, 2);   // rounded background
     display.drawTriangle(CENTER_X - 4, 13,
                          CENTER_X + 4, 13,
-                         CENTER_X,     17);                          // petite flèche vers la roue
+                         CENTER_X,     17);                          // small arrow pointing to the wheel
 
-    display.setDrawColor(0);   // texte en noir sur fond blanc
+    display.setDrawColor(0);   // text black on white background
     display.drawStr(CENTER_X - sw / 2, 12, str_buf);
     display.setDrawColor(1);
 
-    // --- Heure de fin ---
+    // --- End time ---
     display.setFont(u8g2_font_profont12_tr);
     snprintf(str_buf, sizeof(str_buf), "-> %dh%02d", end_hour, end_minute);
     sw = display.getStrWidth(str_buf);
