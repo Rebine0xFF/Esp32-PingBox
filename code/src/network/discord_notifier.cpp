@@ -1,5 +1,6 @@
 #include "network/discord_notifier.h"
 #include "config.h"
+#include "utils/logger.h"
 #include "secrets.h"
 #include "display/screen_info_data.h"
 #include "network/time_manager.h"
@@ -111,19 +112,28 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
 
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
     String response;
+    LOG_INFO("DISCORD", "Sending call message (%d min)...", duration_minutes);
     int code = _discordRequest("POST", url, payload, response);
     if (code != 200 && code != 201) {
         _setServerStatus(DiscordServerStatus::ERROR);
+        LOG_ERROR("DISCORD", "Send failed, HTTP code=%d", code);
         return false;
     }
     _setServerStatus(DiscordServerStatus::OK);
 
     JsonDocument respDoc;
-    if (deserializeJson(respDoc, response) != DeserializationError::Ok) return false;
+    if (deserializeJson(respDoc, response) != DeserializationError::Ok) {
+        LOG_ERROR("DISCORD", "Failed to parse send response JSON");
+        return false;
+    }
 
     const char* messageId = respDoc["id"];
-    if (!messageId) return false;
+    if (!messageId) {
+        LOG_ERROR("DISCORD", "No message id in send response");
+        return false;
+    }
     _pendingMessageId = messageId;
+    LOG_OK("DISCORD", "Message sent, id=%s", messageId);
 
     return true;
 }
@@ -136,12 +146,16 @@ static void _doPollAck() {
     int code = _discordRequest("GET", url, "", response);
     if (code != 200) {
         _setServerStatus(DiscordServerStatus::ERROR);
+        LOG_ERROR("DISCORD", "Ack poll failed, HTTP code=%d", code);
         return;
     }
     _setServerStatus(DiscordServerStatus::OK);
 
     JsonDocument doc;
-    if (deserializeJson(doc, response) != DeserializationError::Ok) return;
+    if (deserializeJson(doc, response) != DeserializationError::Ok) {
+        LOG_ERROR("DISCORD", "Failed to parse ack poll response JSON");
+        return;
+    }
     JsonArray arr = doc.as<JsonArray>();
 
     bool humanReplyFound = false;
@@ -155,6 +169,7 @@ static void _doPollAck() {
     }
 
     if (humanReplyFound) {
+        LOG_OK("DISCORD", "Human reply detected, acknowledgment confirmed");
         xSemaphoreTake(_mutex, portMAX_DELAY);
         _shared.ackReceived = true;
         _shared.state = DiscordState::IDLE;
@@ -195,6 +210,7 @@ static void _discordTask(void*) {
         } else if (stateSnapshot == DiscordState::WAITING_ACK) {
             uint32_t now = millis();
             if (now - _pendingSinceMs > DISCORD_ACK_TIMEOUT_MS) {
+                LOG_WARN("DISCORD", "Ack wait timed out, nobody replied");
                 xSemaphoreTake(_mutex, portMAX_DELAY);
                 _shared.state = DiscordState::IDLE; // nobody answered = stop polling
                 xSemaphoreGive(_mutex);
@@ -213,6 +229,7 @@ static void _discordTask(void*) {
 void discordNotifierInit() {
     _mutex = xSemaphoreCreateMutex();
     xTaskCreatePinnedToCore(_discordTask, "discord_io", 8192, nullptr, 1, nullptr, 0);
+    LOG_INFO("DISCORD", "Background I/O task started on core 0");
 }
 
 bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute, bool isUpdate) {
@@ -227,6 +244,11 @@ bool discordSendCallMessage(int duration_minutes, int current_hour, int current_
         accepted = true;
     }
     xSemaphoreGive(_mutex);
+
+    if (!accepted) {
+        LOG_WARN("DISCORD", "Send request rejected, a send is already queued");
+    }
+
     return accepted;
 }
 
