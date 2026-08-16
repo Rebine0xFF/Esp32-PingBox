@@ -3,6 +3,14 @@
 #include "secrets.h"
 
 // ------------------------------------------------------------
+//  LOGGING
+//  Set to 0 to fully disable Serial output: no LOG_* macro
+//  produces any code, and Serial.begin() is never called.
+// ------------------------------------------------------------
+
+#define ENABLE_LOGS 1
+
+// ------------------------------------------------------------
 //  GPIO MAP
 // ------------------------------------------------------------
 
