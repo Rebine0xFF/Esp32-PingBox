@@ -1,5 +1,6 @@
 #include "network/time_manager.h"
 #include "config.h"
+#include "utils/logger.h"
 #include "network/wifi_manager.h"
 #include <WiFi.h>
 #include <WiFiUdp.h>
@@ -147,24 +148,28 @@ void timeManagerUpdate() {
                 _lastAttemptMs = now;
 
                 if (_resolveServerIfNeeded()) {
+                    LOG_INFO("NTP", "Sending sync request to %s", NTP_SERVER_1);
                     _sendNtpRequest();
                     _requestSentMs = now;
                     _state = SntpState::WAITING_RESPONSE;
+                } else {
+                    LOG_WARN("NTP", "DNS resolution of %s failed, retrying later", NTP_SERVER_1);
                 }
-                // else: DNS resolution failed this round, stay IDLE,
-                // next attempt after NTP_RETRY_INTERVAL_MS
             }
             break;
         }
 
         case SntpState::WAITING_RESPONSE: {
             if (_tryReadNtpResponse()) {
+                bool firstSync = !_synced;
                 _synced = true;
                 _lastSyncMs = now;
                 _state = SntpState::IDLE;
                 _refreshCacheFromSystemClock();
+                LOG_OK("NTP", "%s, time is now %s", firstSync ? "Initial sync done" : "Re-synced", _cachedTime);
             } else if (now - _requestSentMs > NTP_REQUEST_TIMEOUT_MS) {
                 _state = SntpState::IDLE;
+                LOG_WARN("NTP", "Sync request timed out, will retry");
             }
             break;
         }
