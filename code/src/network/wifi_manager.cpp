@@ -1,5 +1,6 @@
 #include "network/wifi_manager.h"
 #include "config.h"
+#include "utils/logger.h"
 #include <WiFi.h>
 
 
@@ -9,16 +10,31 @@ void wifiManagerInit() {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     delay(50);
+    LOG_INFO("WIFI", "Connecting to SSID '%s'...", WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     _lastAttemptMs = millis();
 }
 
 void wifiManagerUpdate() {
-    if (WiFi.status() == WL_CONNECTED) return;
+    static bool _wasConnected = false;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        if (!_wasConnected) {
+            _wasConnected = true;
+            LOG_OK("WIFI", "Connected, IP=%s", WiFi.localIP().toString().c_str());
+        }
+        return;
+    }
+
+    if (_wasConnected) {
+        _wasConnected = false;
+        LOG_WARN("WIFI", "Connection lost, will retry reconnection");
+    }
 
     uint32_t now = millis();
     if (now - _lastAttemptMs > WIFI_RECONNECT_INTERVAL_MS) {
         _lastAttemptMs = now;
+        LOG_INFO("WIFI", "Reconnect attempt...");
         WiFi.disconnect();
         WiFi.reconnect(); // Faster reconnection using internal saved credentials
     }
