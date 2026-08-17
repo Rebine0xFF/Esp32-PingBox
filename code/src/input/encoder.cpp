@@ -10,41 +10,20 @@ static uint32_t _lastChangeMs = 0;  // timestamp of the last detected rotation
 static const int MIN_MINUTES = 0;
 static const int MAX_MINUTES = 90;
 
-// Edge-detection state for the built-in switch (separate from hold-to-reset logic).
+// Edge-detection state for the built-in switch.
 static bool     _switchWasDown    = false;
 static uint32_t _lastSwitchEdgeMs = 0;
 static const uint32_t SWITCH_DEBOUNCE_MS = 200;
 
-// True once encoderSwitchPressed() has claimed the current press.
-// Prevents the hold-to-reset logic from re-triggering while the press is held.
-// Cleared on release.
-static bool _switchClaimedThisPress = false;
-
-
 void encoderInit() {
-
     ESP32Encoder::useInternalWeakPullResistors = puType::up;
-
     // SingleEdge = 1 physical click = 1 increment -> 1 minute per notch
     enc.attachHalfQuad(PIN_ENC_CLK, PIN_ENC_DT);
-
     enc.setCount(_duration_minutes);
-
     pinMode(PIN_ENC_SW, INPUT_PULLUP);
 }
 
-
 int encoderGetMinutes() {
-
-    bool switchDown = (digitalRead(PIN_ENC_SW) == LOW);
-
-    if (switchDown && !_switchClaimedThisPress) {
-        enc.setCount(0);
-    }
-    if (!switchDown) {
-        _switchClaimedThisPress = false; // released: next press starts a fresh session
-    }
-
     int raw = (int)enc.getCount();
 
     if (raw < MIN_MINUTES) {
@@ -78,7 +57,6 @@ bool encoderSwitchPressed() {
         if (now - _lastSwitchEdgeMs > SWITCH_DEBOUNCE_MS) {
             _lastSwitchEdgeMs = now;
             pressed = true;
-            _switchClaimedThisPress = true; // suppress encoderGetMinutes()'s reset for the rest of this press
         }
     }
     _switchWasDown = down;

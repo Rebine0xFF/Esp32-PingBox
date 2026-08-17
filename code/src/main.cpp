@@ -44,6 +44,7 @@ void setup() {
 void loop() {
 
     int encoderDuration = encoderGetMinutes();
+    bool encPressed     = encoderSwitchPressed();
     int current_hour    = timeManagerGetHour();
     int current_minute  = timeManagerGetMinute();
 
@@ -68,12 +69,19 @@ void loop() {
     int wheelDuration = encoderDuration;
     CallState renderState = CallState::NONE;
 
+    // Global action: if encoder is pressed while NOT running, reset time to 0
+    if (encPressed && _callState != LoopCallState::RUNNING) {
+        encoderSetMinutes(0);
+        encoderDuration = 0;
+        wheelDuration = 0;
+    }
+
     if (_callState == LoopCallState::RUNNING) {
         int currentTotalMinutes = current_hour * 60 + current_minute;
         int remaining = _callTargetTotalMinutes - currentTotalMinutes;
         if (remaining < 0) remaining = 0;
 
-        if (encoderSwitchPressed()) {
+        if (encPressed) {
             // Pause: freeze remaining time and seed encoder for adjustments.
             _callState = LoopCallState::PAUSED;
             encoderSetMinutes(remaining);
@@ -142,7 +150,7 @@ void loop() {
         lastRenderState = renderState;
     }
     // ------------------------------------------
-    
+
     buttonsLedUpdate(_callState == LoopCallState::RUNNING);
     wifiManagerUpdate();
     timeManagerUpdate();
