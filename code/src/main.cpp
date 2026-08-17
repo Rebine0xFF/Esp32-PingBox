@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <string.h>
+#include <esp_sleep.h>
 
 #include "display/screen_main.h"
 #include "display/screen_info.h"
@@ -47,6 +48,29 @@ void loop() {
     bool encPressed     = encoderSwitchPressed();
     int current_hour    = timeManagerGetHour();
     int current_minute  = timeManagerGetMinute();
+
+    // ------------------------------------------------------------
+    //  Power Management (Deep Sleep)
+    // ------------------------------------------------------------
+    if (buttonPowerPressed()) {
+        LOG_INFO("MAIN", "Power button pressed, initiating shutdown sequence...");
+        
+        // 1. Turn off displays to prevent burn-in and save power
+        screenMainSleep();
+        screenInfoSleep();
+        
+        // 2. Turn off LED
+        digitalWrite(PIN_LED_BTN, LOW);
+
+        // 3. Configure wakeup source on GPIO 13 (LOW level)
+        esp_sleep_enable_ext0_wakeup(GPIO_NUM_13, 0);
+        
+        LOG_INFO("MAIN", "Entering deep sleep now. Good night!");
+        Serial.flush();
+        
+        // 4. Halt CPU
+        esp_deep_sleep_start();
+    }
 
     // ------------------------------------------------------------
     //  Call countdown: driven by the real clock and independent of Discord acks.

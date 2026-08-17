@@ -9,12 +9,16 @@ static uint32_t _lastBlinkMs   = 0;
 static bool     _ledBlinkState = false;
 
 
+
 void buttonsInit() {
     pinMode(PIN_BTN_SEND, INPUT_PULLUP);
+    pinMode(PIN_SW_POWER, INPUT_PULLUP);
     // LED off until buttonsSetLedReady() is called
     pinMode(PIN_LED_BTN, OUTPUT);
     digitalWrite(PIN_LED_BTN, LOW);
 }
+
+
 
 bool buttonSendPressed() {
     if (digitalRead(PIN_BTN_SEND) == LOW) {
@@ -26,6 +30,20 @@ bool buttonSendPressed() {
     }
     return false;
 }
+
+bool buttonPowerPressed() {
+    static uint32_t _lastPowerPress = 0;
+    if (digitalRead(PIN_SW_POWER) == LOW) {
+        uint32_t now = millis();
+        if (now - _lastPowerPress > BTN_DEBOUNCE_MS) {
+            _lastPowerPress = now;
+            return true;
+        }
+    }
+    return false;
+}
+
+
 
 void buttonsSetLedReady() {
     digitalWrite(PIN_LED_BTN, HIGH);

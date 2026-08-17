@@ -21,6 +21,11 @@ void screenInfoInit() {
     display.sendBuffer();
 }
 
+void screenInfoSleep() {
+    display.clearDisplay();
+    display.setPowerSave(1); // Turn off the OLED panel to save power
+}
+
 // ------------------------------------------------------------
 
 static void _drawContent() {

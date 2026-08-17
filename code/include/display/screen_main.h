@@ -12,3 +12,4 @@ enum class CallState { NONE, RUNNING, PAUSED };
 
 void screenMainInit();
 void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, CallState callState);
+void screenMainSleep();

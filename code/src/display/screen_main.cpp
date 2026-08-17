@@ -61,6 +61,11 @@ void screenMainInit() {
     }
 }
 
+void screenMainSleep() {
+    display.clearDisplay();
+    display.setPowerSave(1);
+}
+
 
 
 // ------------------------------------------------------------
