@@ -112,7 +112,37 @@ void loop() {
     // LoopCallState::IDLE: wheelDuration/renderState already default to the
     // encoder value / CallState::NONE set above.
 
-    screenMainUpdate(wheelDuration, current_hour, current_minute, renderState);
+
+    // --- Main screen rendering optimization ---
+    static int lastWheelDuration = -1;
+    static int lastHour = -1;
+    static int lastMinute = -1;
+    static CallState lastRenderState = CallState::NONE;
+    static uint32_t lastAnimFrameMs = 0;
+
+    bool mainScreenChanged = (wheelDuration != lastWheelDuration) ||
+                             (current_hour != lastHour) ||
+                             (current_minute != lastMinute) ||
+                             (renderState != lastRenderState);
+
+    // Force redraw every 400ms for the hourglass animation when running
+    if (renderState == CallState::RUNNING) {
+        uint32_t now = millis();
+        if (now - lastAnimFrameMs >= 400) {
+            mainScreenChanged = true;
+            lastAnimFrameMs = now;
+        }
+    }
+
+    if (mainScreenChanged) {
+        screenMainUpdate(wheelDuration, current_hour, current_minute, renderState);
+        lastWheelDuration = wheelDuration;
+        lastHour = current_hour;
+        lastMinute = current_minute;
+        lastRenderState = renderState;
+    }
+    // ------------------------------------------
+    
     buttonsLedUpdate(_callState == LoopCallState::RUNNING);
     wifiManagerUpdate();
     timeManagerUpdate();
