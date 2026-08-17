@@ -43,8 +43,8 @@
 //  SERVO POSITIONS (degrees, 0–180)
 // ------------------------------------------------------------
 
-constexpr int SERVO_POS_IN    = 0;
-constexpr int SERVO_POS_OUT   = 90;
+constexpr int SERVO_POS_IN    = 20;
+constexpr int SERVO_POS_OUT   = 160;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 
