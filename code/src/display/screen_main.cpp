@@ -36,9 +36,37 @@ static int pixel_count, line_count, text_count;
 static char str_buf[16];   // generic buffer for itoa / sprintf
 
 
+
 static void _drawPauseIcon(U8G2& display) {
     display.drawBox(5, 3, 5, 18);
     display.drawBox(14, 3, 5, 18);
+}
+
+static void _drawEmergencyScreen(U8G2& display) {
+    uint32_t now = millis();
+
+    display.clearBuffer();
+
+    bool blinkOn = ((now / EMERGENCY_BLINK_INTERVAL_MS) % 2) == 0;
+    if (blinkOn) {
+        display.setFont(u8g2_font_7x14B_tr);
+        display.drawStr(4, 26, "SVP RESET");
+        display.drawStr(4, 44, "BOUTON URGENCE");
+    }
+
+    uint32_t phase = now % EMERGENCY_ARROW_SWEEP_MS;
+    float progress = (float)phase / (float)EMERGENCY_ARROW_SWEEP_MS;
+    float angleRad = radians(progress * EMERGENCY_ARROW_SWEEP_DEG);
+
+    const int cx = 108, cy = 50, len = 14;
+    int x1 = cx - (int)(cos(angleRad) * len);
+    int y1 = cy - (int)(sin(angleRad) * len);
+    int x2 = cx + (int)(cos(angleRad) * len);
+    int y2 = cy + (int)(sin(angleRad) * len);
+    display.drawLine(x1, y1, x2, y2);
+    display.drawDisc(x2, y2, 2);
+
+    display.sendBuffer();
 }
 
 
@@ -72,6 +100,12 @@ void screenMainSleep() {
 
 
 void screenMainUpdate(int duration_minutes, int current_hour, int current_minute, CallState callState) {
+    
+    if (callState == CallState::EMERGENCY) {
+        _drawEmergencyScreen(display);
+        return;
+    }
+
     // ── Internal scaling ──────────────────────────────
     //  Work in "tenths of a minute" (×10) to preserve the same integer math as the original
     //  (original used ×10 for percentages)
