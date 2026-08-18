@@ -7,4 +7,5 @@
 
 void screenInfoInit();
 void screenInfoUpdate();
+void screenInfoUpdateEmergency();
 void screenInfoSleep();

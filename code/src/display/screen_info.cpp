@@ -26,6 +26,16 @@ void screenInfoSleep() {
     display.setPowerSave(1); // Turn off the OLED panel to save power
 }
 
+void screenInfoUpdateEmergency() {
+    display.clearBuffer();
+    display.setFont(u8g2_font_helvB10_tr);
+    display.drawStr(8, 24, "SIGNAL");
+    display.drawStr(8, 40, "URGENT");
+    display.drawStr(8, 56, "ENVOYE");
+    display.drawFrame(0, 0, 128, 64);
+    display.sendBuffer();
+}
+
 // ------------------------------------------------------------
 
 static void _drawContent() {
