@@ -46,6 +46,8 @@ static uint32_t _lastPollMs        = 0;
 // Single blocking HTTPS request. Runs ONLY on the worker task.
 // Certificate validation is skipped (setInsecure()) to avoid pinning against Cloudflare's rotating certs.
 static int _discordRequest(const char* method, const String& url, const String& payload, String& response) {
+    // Create a fresh client for each request to avoid issues with Cloudflare 
+    // silently dropping idle Keep-Alive TCP sockets.
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(5000);
@@ -70,7 +72,6 @@ static int _discordRequest(const char* method, const String& url, const String& 
 
     // Do not attempt to read a body for a "204 No Content" response.
     // Calling getString() on a 204 causes the ESP32 to hang waiting for EOF
-    // until the underlying TCP socket times out (approx. 7 minutes).
     if (code > 0 && code != 204) {
         response = http.getString();
     } else {
@@ -85,7 +86,7 @@ static int _discordRequest(const char* method, const String& url, const String& 
 // isUpdate prefixes the content with "[UPDATE]" and swaps the embed color/title.
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char content[168];
-    const char* prefix = isUpdate ? "[UPDATE] " : "";
+    const char* prefix = isUpdate ? "[UPDATE 🔄] " : "";
 
     bool isImmediate = (duration_minutes <= 0);
 
