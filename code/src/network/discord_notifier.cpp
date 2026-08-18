@@ -11,6 +11,7 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <atomic>
+#include <time.h>
 
 enum class DiscordState { IDLE, WAITING_ACK };
 
@@ -80,12 +81,15 @@ static int _discordRequest(const char* method, const String& url, const String& 
     return code;
 }
 
-// Build message content for the send worker. isUpdate prefixes with "[UPDATE]".
+// Build message content + rich embed for the send worker.
+// isUpdate prefixes the content with "[UPDATE]" and swaps the embed color/title.
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char content[168];
     const char* prefix = isUpdate ? "[UPDATE] " : "";
 
-    if (duration_minutes <= 0) {
+    bool isImmediate = (duration_minutes <= 0);
+
+    if (isImmediate) {
         snprintf(content, sizeof(content),
                  "%s🚨 On mange tout de suite! (réponse ici = compris)",
                  prefix);
@@ -99,8 +103,44 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
                  prefix, duration_minutes, endHour, endMinute);
     }
 
+    // --- Rich embed ---
+    time_t now;
+    time(&now);
+    time_t endEpoch = isImmediate ? now : now + (time_t)duration_minutes * 60;
+
+    const char* embedTitle;
+    uint32_t embedColor;
+    if (isImmediate)   { embedTitle = "🚨 Repas maintenant !";     embedColor = 0xE74C3C; }
+    else if (isUpdate) { embedTitle = "🔄 Mise à jour de l'appel"; embedColor = 0xF1C40F; }
+    else                { embedTitle = "🔔 Appel repas";            embedColor = 0x00BFFF; }
+
+    
+    char description[192];
+    if (isImmediate) {
+        snprintf(description, sizeof(description),
+                 "On mange tout de suite.\nRéponds ici pour confirmer.");
+    } else {
+        snprintf(description, sizeof(description),
+                 "On mange <t:%lu:R>, à <t:%lu:t>.\nRéponds ici pour confirmer.",
+                 (unsigned long)endEpoch, (unsigned long)endEpoch);
+    }
+
+    struct tm nowTm;
+    gmtime_r(&now, &nowTm);
+    char isoTimestamp[25];
+    strftime(isoTimestamp, sizeof(isoTimestamp), "%Y-%m-%dT%H:%M:%SZ", &nowTm);
+
     JsonDocument sendDoc;
     sendDoc["content"] = content;
+
+    JsonArray embeds = sendDoc["embeds"].to<JsonArray>();
+    JsonObject embed = embeds.add<JsonObject>();
+    embed["title"]          = embedTitle;
+    embed["description"]    = description;
+    embed["color"]          = embedColor;
+    embed["timestamp"]      = isoTimestamp;
+    embed["footer"]["text"] = "PingBox";
+
     String payload;
     serializeJson(sendDoc, payload);
 
