@@ -23,6 +23,7 @@ struct DiscordShared {
     int  sendHour            = 0;
     int  sendMinute          = 0;
     bool sendIsUpdate        = false;
+    bool sendIsEmergency     = false;
     bool ackReceived         = false;
 };
 
@@ -173,6 +174,50 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     return true;
 }
 
+// Runs on the worker task. Fires a single alert with
+// no ack tracking (unlike regular calls) since the emergency workflow
+// doesn't wait for a Discord reply.
+static bool _doSendEmergencyMessage(int hour, int minute) {
+    (void)hour; (void)minute; // kept for signature symmetry / future use
+
+    char content[96];
+    snprintf(content, sizeof(content), "⚠️‼️ URGENCE - VIENS TOUT DE SUITE 🫵👺👺 ‼️⚠️");
+
+    time_t now;
+    time(&now);
+    struct tm nowTm;
+    gmtime_r(&now, &nowTm);
+    char isoTimestamp[25];
+    strftime(isoTimestamp, sizeof(isoTimestamp), "%Y-%m-%dT%H:%M:%SZ", &nowTm);
+
+    JsonDocument sendDoc;
+    sendDoc["content"] = content;
+
+    JsonArray embeds = sendDoc["embeds"].to<JsonArray>();
+    JsonObject embed = embeds.add<JsonObject>();
+    embed["title"]          = "⚠️‼️ APPEL D'URGENCE ‼️⚠️";
+    embed["description"]    = "Bouton urgence active. 😱";
+    embed["color"]          = 0x8B0000;
+    embed["timestamp"]      = isoTimestamp;
+    embed["footer"]["text"] = "PingBox - URGENCE";
+
+    String payload;
+    serializeJson(sendDoc, payload);
+
+    String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
+    String response;
+    LOG_WARN("DISCORD", "Sending EMERGENCY message...");
+    int code = _discordRequest("POST", url, payload, response);
+    if (code != 200 && code != 201) {
+        _setServerStatus(DiscordServerStatus::ERROR);
+        LOG_ERROR("DISCORD", "Emergency send failed, HTTP code=%d", code);
+        return false;
+    }
+    _setServerStatus(DiscordServerStatus::OK);
+    LOG_OK("DISCORD", "Emergency message sent");
+    return true;
+}
+
 // Runs on the worker task.
 static void _doPollAck() {
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID
@@ -221,21 +266,25 @@ static void _discordTask(void*) {
         bool doSend = false;
         int duration = 0, hour = 0, minute = 0;
         bool isUpdate = false;
+        bool isEmergency = false;
 
         xSemaphoreTake(_mutex, portMAX_DELAY);
         stateSnapshot = _shared.state;
         if (_shared.sendRequested) {
-            doSend   = true;
-            duration = _shared.sendDurationMinutes;
-            hour     = _shared.sendHour;
-            minute   = _shared.sendMinute;
-            isUpdate = _shared.sendIsUpdate;
+            doSend      = true;
+            duration    = _shared.sendDurationMinutes;
+            hour        = _shared.sendHour;
+            minute      = _shared.sendMinute;
+            isUpdate    = _shared.sendIsUpdate;
+            isEmergency = _shared.sendIsEmergency;
             _shared.sendRequested = false;
         }
         xSemaphoreGive(_mutex);
 
         if (doSend) {
-            if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
+            if (isEmergency) {
+                _doSendEmergencyMessage(hour, minute); // no ack tracking for emergency alerts
+            } else if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
                 _pendingSinceMs = millis();
                 _lastPollMs = millis();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -276,12 +325,34 @@ bool discordSendCallMessage(int duration_minutes, int current_hour, int current_
         _shared.sendHour            = current_hour;
         _shared.sendMinute          = current_minute;
         _shared.sendIsUpdate        = isUpdate;
+        _shared.sendIsEmergency     = false;
         accepted = true;
     }
     xSemaphoreGive(_mutex);
 
     if (!accepted) {
         LOG_WARN("DISCORD", "Send request rejected, a send is already queued");
+    }
+
+    return accepted;
+}
+
+bool discordSendEmergencyMessage(int current_hour, int current_minute) {
+    bool accepted = false;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    if (!_shared.sendRequested) {
+        _shared.sendRequested       = true;
+        _shared.sendDurationMinutes = 0;
+        _shared.sendHour            = current_hour;
+        _shared.sendMinute          = current_minute;
+        _shared.sendIsUpdate        = false;
+        _shared.sendIsEmergency     = true;
+        accepted = true;
+    }
+    xSemaphoreGive(_mutex);
+
+    if (!accepted) {
+        LOG_WARN("DISCORD", "Emergency send rejected, a send is already queued");
     }
 
     return accepted;

@@ -31,6 +31,13 @@ void discordNotifierInit();   // creates the background task ; call once from se
 // is already queued and not yet picked up by the background task.
 bool discordSendCallMessage(int duration_minutes, int current_hour, int current_minute, bool isUpdate);
 
+// Queues a highly distinctive emergency alert, fully separate from the
+// call-message formatting so it can never be confused with a regular
+// meal call, an update, or the "eat now" message. Same non-blocking
+// queuing contract as discordSendCallMessage(): returns false only if a
+// send is already queued and not yet picked up by the background task.
+bool discordSendEmergencyMessage(int current_hour, int current_minute);
+
 // True while a send/ack-poll cycle is in progress on the Discord side.
 bool discordIsAckPending();
 
