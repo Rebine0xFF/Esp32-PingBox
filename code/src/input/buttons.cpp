@@ -13,8 +13,9 @@ static bool     _ledBlinkState = false;
 void buttonsInit() {
     pinMode(PIN_BTN_SEND, INPUT_PULLUP);
     pinMode(PIN_SW_POWER, INPUT_PULLUP);
-    // LED off until buttonsSetLedReady() is called
+    pinMode(PIN_BTN_EMERGENCY, INPUT_PULLUP);
     pinMode(PIN_LED_BTN, OUTPUT);
+    // LED off until buttonsSetLedReady() is called
     digitalWrite(PIN_LED_BTN, LOW);
 }
 
@@ -41,6 +42,24 @@ bool buttonPowerPressed() {
         }
     }
     return false;
+}
+
+bool buttonEmergencyActive() {
+    static bool     _stableState  = false;
+    static bool     _lastRawState = false;
+    static uint32_t _lastEdgeMs   = 0;
+
+    bool raw = (digitalRead(PIN_BTN_EMERGENCY) == HIGH);
+    uint32_t now = millis();
+
+    if (raw != _lastRawState) {
+        _lastRawState = raw;
+        _lastEdgeMs = now;
+    }
+    if (now - _lastEdgeMs > EMERGENCY_DEBOUNCE_MS) {
+        _stableState = raw;
+    }
+    return _stableState;
 }
 
 
