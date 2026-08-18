@@ -75,6 +75,15 @@ constexpr uint32_t DISCORD_ACK_POLL_INTERVAL_MS = 8000;
 constexpr uint32_t DISCORD_ACK_TIMEOUT_MS       = 600000;
 
 // ------------------------------------------------------------
+//  EMERGENCY BUTTON (latching, Normally Closed)
+// ------------------------------------------------------------
+
+constexpr uint32_t EMERGENCY_DEBOUNCE_MS       = 50;    // latch mechanical bounce window
+constexpr uint32_t EMERGENCY_BLINK_INTERVAL_MS = 400;   // "please reset" text blink rate
+constexpr uint32_t EMERGENCY_ARROW_SWEEP_MS    = 700;   // time to sweep the arrow 0 -> 90 deg
+constexpr float    EMERGENCY_ARROW_SWEEP_DEG   = 90.0f; // sweep amplitude
+
+// ------------------------------------------------------------
 //  Miscellaneous
 // ------------------------------------------------------------
 
