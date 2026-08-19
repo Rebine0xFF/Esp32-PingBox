@@ -47,6 +47,8 @@ static uint32_t _lastPollMs        = 0;
 // Single blocking HTTPS request. Runs ONLY on the worker task.
 // Certificate validation is skipped (setInsecure()) to avoid pinning against Cloudflare's rotating certs.
 static int _discordRequest(const char* method, const String& url, const String& payload, String& response) {
+    LOG_INFO("DISCORD", "Free heap before request: %u bytes", ESP.getFreeHeap());
+
     // Create a fresh client for each request to avoid issues with Cloudflare 
     // silently dropping idle Keep-Alive TCP sockets.
     WiFiClientSecure client;
@@ -144,10 +146,13 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     embed["footer"]["text"] = "PingBox";
 
     String payload;
+    payload.reserve(700); // Reserve ~700 bytes upfront to avoid fragmentation
     serializeJson(sendDoc, payload);
 
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
     String response;
+    response.reserve(1024); // Pre-allocate for Discord JSON response
+
     LOG_INFO("DISCORD", "Sending call message (%d min)...", duration_minutes);
     int code = _discordRequest("POST", url, payload, response);
     if (code != 200 && code != 201) {
@@ -202,6 +207,7 @@ static bool _doSendEmergencyMessage(int hour, int minute) {
     embed["footer"]["text"] = "PingBox - URGENCE";
 
     String payload;
+    payload.reserve(512); //idem as above
     serializeJson(sendDoc, payload);
 
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
