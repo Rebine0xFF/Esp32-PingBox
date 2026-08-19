@@ -213,7 +213,7 @@ void loop() {
     } else if (renderState == CallState::EMERGENCY) {
         // Faster refresh for a smooth blink + rotating-arrow animation
         uint32_t now = millis();
-        if (now - lastAnimFrameMs >= 100) {
+        if (now - lastAnimFrameMs >= 200) {
             mainScreenChanged = true;
             lastAnimFrameMs = now;
         }
