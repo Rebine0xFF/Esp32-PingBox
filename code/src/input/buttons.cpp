@@ -4,6 +4,8 @@
 static uint32_t _lastSendPress = 0;
 static const uint32_t BTN_DEBOUNCE_MS = 200;
 
+static const uint32_t EMERGENCY_DEBOUNCE_MS = 50;
+
 static const uint32_t LED_BLINK_INTERVAL_MS = 1000;
 static uint32_t _lastBlinkMs   = 0;
 static bool     _ledBlinkState = false;
