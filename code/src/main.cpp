@@ -11,6 +11,7 @@
 #include "network/wifi_manager.h"
 #include "network/time_manager.h"
 #include "network/discord_notifier.h"
+#include "menu/menu_controller.h"
 #include "config.h"
 #include "utils/logger.h"
 
@@ -35,6 +36,9 @@ void setup() {
     discordNotifierInit();
     LOG_OK("MAIN", "Network stack initialized (WiFi/NTP/Discord)");
 
+    menuControllerInit();
+    LOG_OK("MAIN", "Menu system initialized");
+
     buttonsSetLedReady();
     LOG_LINE();
     LOG_INFO("MAIN", "Setup complete, entering main loop");
@@ -46,10 +50,13 @@ void setup() {
 
 void loop() {
 
-    int encoderDuration = encoderGetMinutes();
-    bool encPressed     = encoderSwitchPressed();
+    static bool _menuWasActiveLastLoop = false;
+
     int current_hour    = timeManagerGetHour();
     int current_minute  = timeManagerGetMinute();
+
+    int encoderDuration = _menuWasActiveLastLoop ? 0 : encoderGetMinutes();
+    bool encPressed      = _menuWasActiveLastLoop ? false : encoderSwitchPressed();
 
     // ------------------------------------------------------------
     //  Power Management (Deep Sleep)
@@ -190,6 +197,16 @@ void loop() {
     }
 
 
+    // ------------------------------------------------------------
+    //  Menu system: opens/closes on PIN_SW_MENU, blocked from opening
+    //  while a call is running/paused or the emergency latch is tripped.
+    //  TODO : add Screen rendering
+    // ------------------------------------------------------------
+    bool menuEntryBlocked = (_callState != LoopCallState::IDLE) || _emergencyActive;
+    menuControllerUpdate(menuEntryBlocked, _emergencyActive);
+    _menuWasActiveLastLoop = menuIsActive();
+
+
     // --- Main screen rendering optimization ---
     static int lastWheelDuration = -1;
     static int lastHour = -1;
@@ -230,7 +247,7 @@ void loop() {
 
     // ------------------------------------------
 
-    if (_emergencyActive) {
+    if (_emergencyActive || menuIsActive()) {
         digitalWrite(PIN_LED_BTN, LOW);
     } else {
         buttonsLedUpdate(_callState == LoopCallState::RUNNING);
@@ -268,7 +285,7 @@ void loop() {
         }
     }
 
-    if (!_emergencyActive && buttonSendPressed()) {
+    if (!_emergencyActive && !menuIsActive() && buttonSendPressed()) {
         // Resending while paused is an update to the already-sent message,
         // rather than a brand new call.
         bool isUpdate  = (_callState == LoopCallState::PAUSED);
