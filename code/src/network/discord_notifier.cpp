@@ -11,7 +11,6 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <atomic>
-#include <time.h>
 
 enum class DiscordState { IDLE, WAITING_ACK };
 
@@ -45,12 +44,18 @@ static uint32_t _lastPollMs        = 0;
 // ------------------------------------------------------------
 
 // Single blocking HTTPS request. Runs ONLY on the worker task.
-// Certificate validation is skipped (setInsecure()) to avoid pinning against Cloudflare's rotating certs.
+// Certificate validation is skipped (setInsecure()) to avoid pinning against
+// Cloudflare's rotating certs. Deliberately a single attempt, no internal
+// retry logic: this simple version proved to be the most reliable one in
+// the field, compared to later variants that added retry loops.
 static int _discordRequest(const char* method, const String& url, const String& payload, String& response) {
-    LOG_INFO("DISCORD", "Free heap before request: %u bytes", ESP.getFreeHeap());
+    // Diagnostic timing: HTTPClient::begin()/connect() performs a blocking
+    // DNS lookup that is NOT bounded by setConnectTimeout(). If a stall
+    // massively exceeds our configured 5s+5s timeouts, this pinpoints
+    // whether the time was lost in DNS/connect (before "begin done") or
+    // in the actual request/response (after).
+    uint32_t startMs = millis();
 
-    // Create a fresh client for each request to avoid issues with Cloudflare 
-    // silently dropping idle Keep-Alive TCP sockets.
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(5000);
@@ -58,14 +63,22 @@ static int _discordRequest(const char* method, const String& url, const String& 
     HTTPClient http;
     http.setConnectTimeout(5000);
     http.setTimeout(5000);
-    if (!http.begin(client, url)) return -1;
+    bool began = http.begin(client, url);
+    uint32_t beginDoneMs = millis();
+    if (beginDoneMs - startMs > 6000) {
+        LOG_WARN("DISCORD", "http.begin()/DNS took %lu ms (way beyond the 5s connect timeout)",
+                  (unsigned long)(beginDoneMs - startMs));
+    }
+    if (!began) return -1;
 
     http.addHeader("Authorization", String("Bot ") + DISCORD_BOT_TOKEN);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("User-Agent", "PingBox (https://github.com/Rebine0xFF/Esp32-PingBox, 1.0)");
-    
-    // Force the server to close the TCP connection immediately after the response.
-    // Prevents HTTPClient::getString() from hanging until Cloudflare's Keep-Alive timeout.
+
+    // Force the server to close the TCP connection immediately after the
+    // response. Prevents HTTPClient::getString() from hanging until
+    // Cloudflare's Keep-Alive timeout, and avoids the WAF flagging
+    // long-lived idle sockets.
     http.addHeader("Connection", "close");
 
     int code;
@@ -73,27 +86,33 @@ static int _discordRequest(const char* method, const String& url, const String& 
     else if (strcmp(method, "PUT") == 0)  code = http.PUT(payload);
     else                                   code = http.GET();
 
+    uint32_t requestDoneMs = millis();
+    if (requestDoneMs - beginDoneMs > 6000) {
+        LOG_WARN("DISCORD", "POST/GET/PUT call itself took %lu ms",
+                  (unsigned long)(requestDoneMs - beginDoneMs));
+    }
+
     // Do not attempt to read a body for a "204 No Content" response.
     // Calling getString() on a 204 causes the ESP32 to hang waiting for EOF
+    // until the underlying TCP socket times out (approx. 7 minutes).
     if (code > 0 && code != 204) {
         response = http.getString();
     } else {
         response = "";
     }
-    
+
     http.end();
     return code;
 }
 
-// Build message content + rich embed for the send worker.
-// isUpdate prefixes the content with "[UPDATE]" and swaps the embed color/title.
+// Build message content for the send worker. isUpdate prefixes with "[UPDATE]".
+// Plain content only, no embed: the simple format that was reliable before
+// rich embeds were introduced.
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char content[168];
-    const char* prefix = isUpdate ? "[UPDATE 🔄] " : "";
+    const char* prefix = isUpdate ? "[UPDATE] " : "";
 
-    bool isImmediate = (duration_minutes <= 0);
-
-    if (isImmediate) {
+    if (duration_minutes <= 0) {
         snprintf(content, sizeof(content),
                  "%s🚨 On mange tout de suite! (réponse ici = compris)",
                  prefix);
@@ -107,52 +126,13 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
                  prefix, duration_minutes, endHour, endMinute);
     }
 
-    // --- Rich embed ---
-    time_t now;
-    time(&now);
-    time_t endEpoch = isImmediate ? now : now + (time_t)duration_minutes * 60;
-
-    const char* embedTitle;
-    uint32_t embedColor;
-    if (isImmediate)   { embedTitle = "🚨 Repas maintenant !";     embedColor = 0xE74C3C; }
-    else if (isUpdate) { embedTitle = "🔄 Mise à jour de l'appel"; embedColor = 0xF1C40F; }
-    else                { embedTitle = "🔔 Appel repas";            embedColor = 0x00BFFF; }
-
-    
-    char description[192];
-    if (isImmediate) {
-        snprintf(description, sizeof(description),
-                 "On mange tout de suite.\nRéponds ici pour confirmer.");
-    } else {
-        snprintf(description, sizeof(description),
-                 "On mange <t:%lu:R>, à <t:%lu:t>.\nRéponds ici pour confirmer.",
-                 (unsigned long)endEpoch, (unsigned long)endEpoch);
-    }
-
-    struct tm nowTm;
-    gmtime_r(&now, &nowTm);
-    char isoTimestamp[25];
-    strftime(isoTimestamp, sizeof(isoTimestamp), "%Y-%m-%dT%H:%M:%SZ", &nowTm);
-
     JsonDocument sendDoc;
     sendDoc["content"] = content;
-
-    JsonArray embeds = sendDoc["embeds"].to<JsonArray>();
-    JsonObject embed = embeds.add<JsonObject>();
-    embed["title"]          = embedTitle;
-    embed["description"]    = description;
-    embed["color"]          = embedColor;
-    embed["timestamp"]      = isoTimestamp;
-    embed["footer"]["text"] = "PingBox";
-
     String payload;
-    payload.reserve(700); // Reserve ~700 bytes upfront to avoid fragmentation
     serializeJson(sendDoc, payload);
 
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
     String response;
-    response.reserve(1024); // Pre-allocate for Discord JSON response
-
     LOG_INFO("DISCORD", "Sending call message (%d min)...", duration_minutes);
     int code = _discordRequest("POST", url, payload, response);
     if (code != 200 && code != 201) {
@@ -179,35 +159,20 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     return true;
 }
 
-// Runs on the worker task. Fires a single alert with
-// no ack tracking (unlike regular calls) since the emergency workflow
-// doesn't wait for a Discord reply.
+// Runs on the worker task. Fires a single distinctive alert, fully separate
+// from the call-message formatting so it can never be confused with a
+// regular meal call. No ack tracking, since the emergency workflow doesn't
+// wait for a Discord reply. Plain content only, no embed - same rationale
+// as _doSendCallMessage().
 static bool _doSendEmergencyMessage(int hour, int minute) {
     (void)hour; (void)minute; // kept for signature symmetry / future use
 
     char content[96];
     snprintf(content, sizeof(content), "⚠️‼️ URGENCE - VIENS TOUT DE SUITE 🫵👺👺 ‼️⚠️");
 
-    time_t now;
-    time(&now);
-    struct tm nowTm;
-    gmtime_r(&now, &nowTm);
-    char isoTimestamp[25];
-    strftime(isoTimestamp, sizeof(isoTimestamp), "%Y-%m-%dT%H:%M:%SZ", &nowTm);
-
     JsonDocument sendDoc;
     sendDoc["content"] = content;
-
-    JsonArray embeds = sendDoc["embeds"].to<JsonArray>();
-    JsonObject embed = embeds.add<JsonObject>();
-    embed["title"]          = "⚠️‼️ APPEL D'URGENCE ‼️⚠️";
-    embed["description"]    = "Bouton urgence active. 😱";
-    embed["color"]          = 0x8B0000;
-    embed["timestamp"]      = isoTimestamp;
-    embed["footer"]["text"] = "PingBox - URGENCE";
-
     String payload;
-    payload.reserve(512); //idem as above
     serializeJson(sendDoc, payload);
 
     String url = String(DISCORD_API_BASE) + "/channels/" + DISCORD_CHANNEL_ID + "/messages";
@@ -310,7 +275,13 @@ static void _discordTask(void*) {
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(200)); // worker cadence; main timing uses millis() above
+        // Worker cadence. Kept deliberately larger than a minimal tick: a
+        // send request landing right after an ack poll (or vice-versa) was
+        // observed to reliably fail its TLS handshake, most likely because
+        // the previous connection's socket hadn't been fully released by
+        // LWIP yet. This gap gives it breathing room between any two
+        // consecutive HTTPS actions, without adding any retry logic.
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
