@@ -4,6 +4,7 @@
 
 static ESP32Encoder enc;
 
+static long _lastRawCountForMenu = 0;
 static int _duration_minutes = 0;   // default at startup
 static uint32_t _lastChangeMs = 0;  // timestamp of the last detected rotation
 
@@ -21,6 +22,7 @@ void encoderInit() {
     enc.attachHalfQuad(PIN_ENC_CLK, PIN_ENC_DT);
     enc.setCount(_duration_minutes);
     pinMode(PIN_ENC_SW, INPUT_PULLUP);
+    _lastRawCountForMenu = enc.getCount();
 }
 
 int encoderGetMinutes() {
@@ -69,4 +71,25 @@ void encoderSetMinutes(int minutes) {
 
     enc.setCount(minutes);
     _duration_minutes = minutes;
+}
+
+
+// ------------------------------------------------------------
+//  Menu navigation support
+// ------------------------------------------------------------
+
+bool encoderSwitchIsDown() {
+    // Raw level only; menu handles press timing
+    return digitalRead(PIN_ENC_SW) == LOW;
+}
+
+int encoderConsumeDelta() {
+    long raw = enc.getCount();
+    int delta = (int)(raw - _lastRawCountForMenu);
+    _lastRawCountForMenu = raw;
+    return delta;
+}
+
+void encoderResyncMenuDelta() {
+    _lastRawCountForMenu = enc.getCount();
 }
