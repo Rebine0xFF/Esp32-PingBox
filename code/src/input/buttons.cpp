@@ -15,6 +15,7 @@ static bool     _ledBlinkState = false;
 void buttonsInit() {
     pinMode(PIN_BTN_SEND, INPUT_PULLUP);
     pinMode(PIN_SW_POWER, INPUT_PULLUP);
+    pinMode(PIN_SW_MENU, INPUT_PULLUP);
     pinMode(PIN_BTN_EMERGENCY, INPUT_PULLUP);
     pinMode(PIN_LED_BTN, OUTPUT);
     // LED off until buttonsSetLedReady() is called
@@ -40,6 +41,18 @@ bool buttonPowerPressed() {
         uint32_t now = millis();
         if (now - _lastPowerPress > BTN_DEBOUNCE_MS) {
             _lastPowerPress = now;
+            return true;
+        }
+    }
+    return false;
+}
+
+bool buttonMenuPressed() {
+    static uint32_t _lastMenuPress = 0;
+    if (digitalRead(PIN_SW_MENU) == LOW) {
+        uint32_t now = millis();
+        if (now - _lastMenuPress > BTN_DEBOUNCE_MS) {
+            _lastMenuPress = now;
             return true;
         }
     }
