@@ -153,8 +153,16 @@ static void _drawContent() {
 
 // ------------------------------------------------------------
 
-void screenInfoUpdateMenu(const char* categoryName) {
+void screenInfoUpdateMenu(const char* categoryName, bool waitingForSelection) {
     display.clearBuffer();
+
+    if (waitingForSelection) {
+        display.setFont(u8g2_font_profont10_tr);
+        display.drawStr(10, 34, "En attente de");
+        display.drawStr(10, 44, "selection...");
+        display.sendBuffer();
+        return;
+    }
 
     display.setFont(u8g2_font_profont17_tr);
     display.drawStr(4, 24, categoryName);

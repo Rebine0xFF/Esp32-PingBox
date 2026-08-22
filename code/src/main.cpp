@@ -252,25 +252,31 @@ void loop() {
     }
 
     if (menuIsActive()) {
-        static int       lastMenuSelected    = -1;
-        static bool      lastMenuListFocused = true;
-        static MenuState lastMenuState       = MenuState::OFF;
+        static int  lastMenuSelected    = -1;
+        static bool lastMenuListFocused = true;
+
+        // Triggers screen_info separately from screen_main: it must only
+        // refresh on a state TRANSITION (entering the list or entering a
+        // category), never while merely browsing the list with the encoder.
+        static MenuState lastMenuStateForInfo = MenuState::OFF;
 
         bool listFocused = menuIsListFocused();
         int  selected    = menuGetSelectedIndex();
         MenuState state  = menuGetState();
 
-        if (selected != lastMenuSelected || listFocused != lastMenuListFocused || state != lastMenuState) {
+        if (selected != lastMenuSelected || listFocused != lastMenuListFocused) {
             static const char* categoryNames[(int)MenuCategory::COUNT];
             for (int i = 0; i < (int)MenuCategory::COUNT; i++) {
                 categoryNames[i] = menuGetCategoryName(i);
             }
             screenMainUpdateMenu(categoryNames, (int)MenuCategory::COUNT, selected, listFocused);
-            screenInfoUpdateMenu(menuGetCategoryName(selected));
-
             lastMenuSelected    = selected;
             lastMenuListFocused = listFocused;
-            lastMenuState       = state;
+        }
+
+        if (state != lastMenuStateForInfo) {
+            screenInfoUpdateMenu(menuGetCategoryName(selected), listFocused);
+            lastMenuStateForInfo = state;
         }
     }
 

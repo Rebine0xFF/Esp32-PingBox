@@ -8,5 +8,5 @@
 void screenInfoInit();
 void screenInfoUpdate();
 void screenInfoUpdateEmergency();
-void screenInfoUpdateMenu(const char* categoryName);
+void screenInfoUpdateMenu(const char* categoryName, bool waitingForSelection);
 void screenInfoSleep();
