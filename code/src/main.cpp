@@ -112,6 +112,7 @@ void loop() {
     // ------------------------------------------------------------
     static bool _emergencyActive = false;
     static bool _forceMainRedraw = false;
+    static bool _forceInfoRedraw = false;
     bool emergencyRaw = buttonEmergencyActive();
 
     if (emergencyRaw && !_emergencyActive) {
@@ -203,7 +204,12 @@ void loop() {
     //  TODO : add Screen rendering
     // ------------------------------------------------------------
     bool menuEntryBlocked = (_callState != LoopCallState::IDLE) || _emergencyActive;
+    bool menuActiveBeforeUpdate = menuIsActive();
     menuControllerUpdate(menuEntryBlocked, _emergencyActive);
+    if (menuActiveBeforeUpdate && !menuIsActive()) {
+        _forceMainRedraw = true;
+        _forceInfoRedraw = true;
+    }
     _menuWasActiveLastLoop = menuIsActive();
 
 
@@ -236,13 +242,36 @@ void loop() {
         }
     }
 
-    if (mainScreenChanged) {
+    if (mainScreenChanged && !menuIsActive()) {
         screenMainUpdate(wheelDuration, current_hour, current_minute, renderState);
         lastWheelDuration = wheelDuration;
         lastHour = current_hour;
         lastMinute = current_minute;
         lastRenderState = renderState;
         _forceMainRedraw = false;
+    }
+
+    if (menuIsActive()) {
+        static int       lastMenuSelected    = -1;
+        static bool      lastMenuListFocused = true;
+        static MenuState lastMenuState       = MenuState::OFF;
+
+        bool listFocused = menuIsListFocused();
+        int  selected    = menuGetSelectedIndex();
+        MenuState state  = menuGetState();
+
+        if (selected != lastMenuSelected || listFocused != lastMenuListFocused || state != lastMenuState) {
+            static const char* categoryNames[(int)MenuCategory::COUNT];
+            for (int i = 0; i < (int)MenuCategory::COUNT; i++) {
+                categoryNames[i] = menuGetCategoryName(i);
+            }
+            screenMainUpdateMenu(categoryNames, (int)MenuCategory::COUNT, selected, listFocused);
+            screenInfoUpdateMenu(menuGetCategoryName(selected));
+
+            lastMenuSelected    = selected;
+            lastMenuListFocused = listFocused;
+            lastMenuState       = state;
+        }
     }
 
     // ------------------------------------------
@@ -324,7 +353,7 @@ void loop() {
     //  Info screen (software I2C - slow): update only on change and
     //  deferred until encoder idle to avoid stuttering the main animation.
     // ------------------------------------------------------------
-    if (!_emergencyActive) {
+    if (!_emergencyActive && !menuIsActive()) {
         static char lastTime[6]   = "";
         static char lastDay[4]    = "";
         static char lastDayNum[3] = "";
@@ -349,7 +378,8 @@ void loop() {
                     || strcmp(newIP, lastIP) != 0
                     || wifiOk != lastWifiOk
                     || currentActionVersion != lastActionVersionSeen
-                    || discordStatus != lastServerStatus;
+                    || discordStatus != lastServerStatus
+                    || _forceInfoRedraw;
 
         if (changed) {
             snprintf(TIME_text, sizeof(TIME_text), "%s", newTime);
@@ -382,6 +412,7 @@ void loop() {
             setStatusFace(wifiOk && discordStatus != DiscordServerStatus::ERROR);
 
             infoUpdatePending = true;
+            _forceInfoRedraw = false;
         }
 
         if (infoUpdatePending) {
