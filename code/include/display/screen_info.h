@@ -8,4 +8,5 @@
 void screenInfoInit();
 void screenInfoUpdate();
 void screenInfoUpdateEmergency();
+void screenInfoUpdateMenu(const char* categoryName);
 void screenInfoSleep();

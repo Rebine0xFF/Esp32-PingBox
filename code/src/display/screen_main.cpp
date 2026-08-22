@@ -70,6 +70,42 @@ static void _drawEmergencyScreen(U8G2& display) {
     display.sendBuffer();
 }
 
+void screenMainUpdateMenu(const char* const* categoryNames, int categoryCount, int selectedIndex, bool listFocused) {
+    display.clearBuffer();
+    display.setFont(u8g2_font_6x10_tr);
+
+    const int rowHeight = 9;
+
+    for (int i = 0; i < categoryCount; i++) {
+        int y = 9 + i * rowHeight;
+        bool isSelected = (i == selectedIndex);
+
+        if (isSelected && listFocused) {
+            display.setDrawColor(1);
+            display.drawBox(0, y - rowHeight + 2, 128, rowHeight);
+            display.setDrawColor(0);
+            display.drawStr(4, y, categoryNames[i]);
+            display.setDrawColor(1);
+        } else if (isSelected) {
+            display.drawFrame(0, y - rowHeight + 2, 128, rowHeight);
+            display.drawStr(4, y, categoryNames[i]);
+        } else {
+            display.drawStr(4, y, categoryNames[i]);
+        }
+    }
+
+    if (!listFocused) {
+        display.setDrawColor(1);
+        display.drawBox(0, 54, 128, 10);
+        display.setDrawColor(0);
+        display.setFont(u8g2_font_4x6_tr);
+        display.drawStr(8, 61, "Attente de selection");
+        display.setDrawColor(1);
+    }
+
+    display.sendBuffer();
+}
+
 
 
 // ------------------------------------------------------------

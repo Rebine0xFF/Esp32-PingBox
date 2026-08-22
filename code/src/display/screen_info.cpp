@@ -153,6 +153,20 @@ static void _drawContent() {
 
 // ------------------------------------------------------------
 
+void screenInfoUpdateMenu(const char* categoryName) {
+    display.clearBuffer();
+
+    display.setFont(u8g2_font_profont17_tr);
+    display.drawStr(4, 24, categoryName);
+
+    display.drawLine(0, 30, 127, 30);
+
+    display.setFont(u8g2_font_profont10_tr);
+    display.drawStr(4, 48, "Contenu a venir");
+
+    display.sendBuffer();
+}
+
 void screenInfoUpdate() {
     display.clearBuffer();
     _drawContent();
