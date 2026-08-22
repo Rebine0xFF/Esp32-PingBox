@@ -38,4 +38,5 @@ void menuControllerUpdate(bool entryBlocked, bool emergencyActive);
 bool menuIsActive();                  // true for any state other than OFF
 bool menuIsListFocused();             // true only in LIST (screen_main brightness)
 MenuState menuGetState();
+const char* menuGetCategoryName(int index);
 int menuGetSelectedIndex();           // cursor position in the category list (0..COUNT-1)

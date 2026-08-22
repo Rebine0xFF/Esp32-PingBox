@@ -7,6 +7,14 @@
 static MenuState _state = MenuState::OFF;
 static int _selectedIndex = 0;
 
+static const char* _categoryNames[(int)MenuCategory::COUNT] = {
+    "Affichage",
+    "Statistiques",
+    "Servo (test)",
+    "Systeme",
+    "Reseau",
+    "Reset stats"
+};
 
 static const uint32_t LONG_PRESS_MS = 600;
 static bool     _encSwWasDown      = false;
@@ -116,3 +124,8 @@ bool menuIsActive()        { return _state != MenuState::OFF; }
 bool menuIsListFocused()   { return _state == MenuState::LIST; }
 MenuState menuGetState()   { return _state; }
 int menuGetSelectedIndex() { return _selectedIndex; }
+
+const char* menuGetCategoryName(int index) {
+    if (index < 0 || index >= (int)MenuCategory::COUNT) return "";
+    return _categoryNames[index];
+}
