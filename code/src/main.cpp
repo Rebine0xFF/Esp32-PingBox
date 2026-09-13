@@ -10,7 +10,7 @@
 #include "actuators/servo_control.h"
 #include "network/wifi_manager.h"
 #include "network/time_manager.h"
-#include "network/discord_notifier.h"
+#include "network/ntfy_notifier.h"
 #include "menu/menu_controller.h"
 #include "config.h"
 #include "utils/logger.h"
@@ -33,8 +33,8 @@ void setup() {
 
     wifiManagerInit();
     timeManagerInit();
-    discordNotifierInit();
-    LOG_OK("MAIN", "Network stack initialized (WiFi/NTP/Discord)");
+    ntfyNotifierInit();
+    LOG_OK("MAIN", "Network stack initialized (WiFi/NTP/Ntfy)");
 
     menuControllerInit();
     LOG_OK("MAIN", "Menu system initialized");
@@ -125,7 +125,7 @@ void loop() {
 
         digitalWrite(PIN_LED_BTN, LOW);
         screenInfoUpdateEmergency();
-        discordSendEmergencyMessage(current_hour, current_minute);
+        ntfySendEmergencyMessage(current_hour, current_minute);
 
     } else if (!emergencyRaw && _emergencyActive) {
         // Falling edge: switch was reset back to its rest position
@@ -176,7 +176,7 @@ void loop() {
                 setLastAction(LastAction::CALLED, timeStr);
 
                 if (wifiManagerIsConnected() && timeManagerIsSynced()) {
-                    discordSendCallMessage(0, current_hour, current_minute, false);
+                    ntfySendCallMessage(0, current_hour, current_minute, false);
                 } else {
                     LOG_WARN("MAIN", "Network/time not ready, queuing send for later flush");
                     _discordSendPending  = true;
@@ -305,14 +305,14 @@ void loop() {
             _pendingNeedsResync = false;
         }
 
-        discordSendCallMessage(_pendingSendDuration, syncedHour, syncedMinute, _pendingIsUpdate);
+        ntfySendCallMessage(_pendingSendDuration, syncedHour, syncedMinute, _pendingIsUpdate);
     }
 
     // Poll for Discord ACK at 500ms intervals to avoid mutex contention with the background task.
     static uint32_t lastAckCheck = 0;
     if (!_emergencyActive && millis() - lastAckCheck > 500) {
         lastAckCheck = millis();
-        if (discordCheckAndClearAck()) {
+        if (ntfyCheckAndClearAck()) {
             LOG_OK("MAIN", "Discord acknowledgment received");
             char timeStr[6];
             timeManagerGetTimeString(timeStr, sizeof(timeStr));
@@ -344,7 +344,7 @@ void loop() {
         setLastAction(LastAction::CALLED, timeStr);
 
         if (wifiManagerIsConnected() && timeManagerIsSynced()) {
-            discordSendCallMessage(encoderDuration, current_hour, current_minute, isUpdate);
+            ntfySendCallMessage(encoderDuration, current_hour, current_minute, isUpdate);
         } else {
             // Network/time not ready yet: queue it, the pending-send block
             // below will flush it as soon as both become ready.
@@ -366,7 +366,7 @@ void loop() {
         static char lastIP[16]    = "";
         static bool lastWifiOk    = false;
         static uint32_t lastActionVersionSeen = 0;
-        static DiscordServerStatus lastServerStatus = DiscordServerStatus::PAUSED;
+        static NtfyServerStatus lastServerStatus = NtfyServerStatus::PAUSED;
         static bool infoUpdatePending = false;
 
         char newTime[6], newDay[4], newDayNum[3], newIP[16];
@@ -376,7 +376,7 @@ void loop() {
         wifiManagerGetIPString(newIP, sizeof(newIP));
         bool wifiOk = wifiManagerIsConnected();
         uint32_t currentActionVersion = getLastActionVersion();
-        DiscordServerStatus discordStatus = discordGetServerStatus();
+        NtfyServerStatus ntfyStatus = ntfyGetServerStatus();
 
         bool changed = strcmp(newTime, lastTime) != 0
                     || strcmp(newDay, lastDay) != 0
@@ -384,7 +384,7 @@ void loop() {
                     || strcmp(newIP, lastIP) != 0
                     || wifiOk != lastWifiOk
                     || currentActionVersion != lastActionVersionSeen
-                    || discordStatus != lastServerStatus
+                    || ntfyStatus != lastServerStatus
                     || _forceInfoRedraw;
 
         if (changed) {
@@ -399,7 +399,7 @@ void loop() {
             strcpy(lastIP, newIP);
             lastWifiOk = wifiOk;
             lastActionVersionSeen = currentActionVersion;
-            lastServerStatus = discordStatus;
+            lastServerStatus = ntfyStatus;
 
             // WiFi icon + small status glyph
             setWifiIcon(wifiOk);
@@ -407,15 +407,15 @@ void loop() {
 
             // Discord server status glyph (PAUSED = no interaction yet, not an error)
             Status serverStatus = Status::PAUSED;
-            switch (discordStatus) {
-                case DiscordServerStatus::OK:    serverStatus = Status::OK;    break;
-                case DiscordServerStatus::ERROR: serverStatus = Status::ERROR; break;
-                default:                         serverStatus = Status::PAUSED; break;
+            switch (ntfyStatus) {
+                case NtfyServerStatus::OK:    serverStatus = Status::OK;    break;
+                case NtfyServerStatus::ERROR: serverStatus = Status::ERROR; break;
+                default:                      serverStatus = Status::PAUSED; break;
             }
             setServerStatus(serverStatus);
 
-            // Global face: happy unless WiFi is down or the last Discord call failed
-            setStatusFace(wifiOk && discordStatus != DiscordServerStatus::ERROR);
+            // Global face: happy unless WiFi is down or the last Ntfy call failed
+            setStatusFace(wifiOk && ntfyStatus != NtfyServerStatus::ERROR);
 
             infoUpdatePending = true;
             _forceInfoRedraw = false;
