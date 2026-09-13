@@ -8,7 +8,7 @@
 #include <freertos/task.h>
 #include <freertos/semphr.h>
 #include <atomic>
-#include <time.h>
+#include <string.h>
 
 enum class NtfyState { IDLE, WAITING_ACK };
 
@@ -34,48 +34,52 @@ static void _setServerStatus(NtfyServerStatus s) {
     _serverStatus.store((int)s, std::memory_order_relaxed);
 }
 
-// Fields only used by the background worker task (no locking).
-static time_t   _ackSinceEpoch  = 0;
-static uint32_t _pendingSinceMs = 0;
-static uint32_t _lastPollMs     = 0;
-
+// ------------------------------------------------------------
+//  One-shot HTTPS requests - used only for sending (rare, user-triggered).
 // ------------------------------------------------------------
 
-// Single blocking HTTPS request. Runs ONLY on the worker task.
-// Certificate validation is skipped (setInsecure()), same rationale
-// as the previous notifier: no pinning against rotating certs.
 static int _ntfyRequest(const char* method, const String& url, const String& body,
                          const char* title, const char* priority, const char* actions,
                          String& response) {
+    uint32_t startMs = millis();
+
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(5000);
+    // setTimeout() only bounds socket reads once connected - it does NOT
+    // bound the mbedTLS handshake retry loop itself, which was observed
+    // to hang up to ~60s despite the 5s timeout above. This is measured
+    // in seconds, not milliseconds.
+    client.setHandshakeTimeout(8);
 
     HTTPClient http;
     http.setConnectTimeout(5000);
     http.setTimeout(5000);
-    if (!http.begin(client, url)) return -1;
+    bool began = http.begin(client, url);
+
+    // Diagnostic: http.begin()/connect() runs a blocking DNS lookup that is
+    // NOT bounded by setConnectTimeout(). If this massively exceeds our
+    // configured timeouts, it confirms the stall happened in DNS, not in
+    // the request/response itself.
+    uint32_t beginDoneMs = millis();
+    if (beginDoneMs - startMs > 6000) {
+        LOG_WARN("NTFY", "http.begin()/DNS took %lu ms (way beyond the 5s connect timeout)",
+                  (unsigned long)(beginDoneMs - startMs));
+    }
+    if (!began) return -1;
 
     if (title)    http.addHeader("Title", title);
     if (priority) http.addHeader("Priority", priority);
     if (actions)  http.addHeader("Actions", actions);
-    // Force the server to close the connection right after the response,
-    // same fix as before: avoids hanging on Keep-Alive idle sockets.
     http.addHeader("Connection", "close");
 
     int code = (strcmp(method, "POST") == 0) ? http.POST(body) : http.GET();
-
-    // Never read a body on 204 - it hangs waiting for EOF (see previous notifier notes).
     response = (code > 0 && code != 204) ? http.getString() : "";
 
     http.end();
     return code;
 }
 
-// Runs on the worker task. Plain-text body, no JSON payload needed for ntfy.
-// The Actions header attaches a button that POSTs "ACK" straight to the
-// ack topic from the recipient's device - no ESP32 involvement required
-// to arm it.
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char body[168];
     const char* prefix = isUpdate ? "[UPDATE] " : "";
@@ -107,8 +111,6 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     return true;
 }
 
-// Runs on the worker task. No ack action button here: the emergency
-// workflow never waited for a reply, same as the previous notifier.
 static bool _doSendEmergencyMessage() {
     String url = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL;
     String response;
@@ -126,28 +128,102 @@ static bool _doSendEmergencyMessage() {
     return true;
 }
 
-// Runs on the worker task. Any non-empty response on the ack topic since
-// the reference timestamp means someone tapped "Compris" - no JSON
-// parsing needed, since we fully control what gets posted there.
-static void _doPollAck() {
-    String url = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_ACK
-               + "/json?poll=1&since=" + (uint32_t)_ackSinceEpoch;
-    String response;
-    int code = _ntfyRequest("GET", url, "", nullptr, nullptr, nullptr, response);
-    if (code != 200) {
-        _setServerStatus(NtfyServerStatus::ERROR);
-        LOG_ERROR("NTFY", "Ack poll failed, HTTP code=%d", code);
-        return;
-    }
-    _setServerStatus(NtfyServerStatus::OK);
+// ------------------------------------------------------------
+//  Ack detection - single persistent subscribe connection instead of
+//  reconnecting every few seconds. ntfy keeps this connection open and
+//  streams new events as they happen, so the recipient's ack tap shows
+//  up here without the ESP32 ever polling for it.
+// ------------------------------------------------------------
 
-    if (response.length() > 0) {
-        LOG_OK("NTFY", "Acknowledgment received");
-        xSemaphoreTake(_mutex, portMAX_DELAY);
-        _shared.ackReceived = true;
-        _shared.state = NtfyState::IDLE;
-        xSemaphoreGive(_mutex);
+static WiFiClientSecure* _ackClient = nullptr;
+static bool     _ackStreamOpen = false;
+static uint32_t _lastAckConnectAttemptMs = 0;
+static uint32_t _pendingSinceMs = 0;
+
+// Tail of the previous read, kept so a marker split across two reads is
+// still detected. Simple substring search, not a real chunked-HTTP
+// parser - a pragmatic simplification, same spirit as the previous
+// "any non-empty poll response = ack" approach.
+static char _ackResidual[24] = {0};
+
+static const char* ACK_EVENT_MARKER = "\"event\":\"message\"";
+
+static void _ackStreamClose() {
+    if (_ackClient != nullptr) {
+        _ackClient->stop();
+        delete _ackClient;
+        _ackClient = nullptr;
     }
+    _ackStreamOpen = false;
+    _ackResidual[0] = '\0';
+}
+
+static bool _ackStreamOpenConnection() {
+    // Fresh object on every attempt: reusing a single WiFiClientSecure
+    // across many connect()/stop() cycles caused setSocketOption() to be
+    // called on an already-closed file descriptor ("Bad file number").
+    if (_ackClient != nullptr) {
+        delete _ackClient;
+        _ackClient = nullptr;
+    }
+    _ackClient = new WiFiClientSecure();
+    _ackClient->setInsecure();
+    _ackClient->setTimeout(5000);
+    _ackClient->setHandshakeTimeout(8);   // seconds - bounds the handshake loop itself
+
+    uint32_t startMs = millis();
+    if (!_ackClient->connect(NTFY_HOST, 443)) {
+        LOG_WARN("NTFY", "Ack stream connect failed after %lu ms", (unsigned long)(millis() - startMs));
+        delete _ackClient;
+        _ackClient = nullptr;
+        return false;
+    }
+
+    String request = String("GET /") + NTFY_TOPIC_ACK + "/json HTTP/1.1\r\n"
+                    + "Host: " + NTFY_HOST + "\r\n"
+                    + "Connection: keep-alive\r\n\r\n";
+    _ackClient->print(request);
+
+    _ackStreamOpen = true;
+    _ackResidual[0] = '\0';
+    LOG_OK("NTFY", "Ack stream opened (%lu ms)", (unsigned long)(millis() - startMs));
+    return true;
+}
+
+// Non-blocking: only drains bytes already sitting in the socket buffer,
+// never waits for more. Safe to call every worker tick regardless of
+// how much (or how little) traffic the stream is carrying.
+static bool _ackStreamCheck() {
+    if (!_ackStreamOpen || _ackClient == nullptr) return false;
+
+    if (!_ackClient->connected()) {
+        LOG_WARN("NTFY", "Ack stream dropped, will reopen");
+        _ackStreamClose();
+        return false;
+    }
+
+    bool found = false;
+    while (_ackClient->available() > 0 && !found) {
+        char chunk[128];
+        int toRead = _ackClient->available();
+        if (toRead > (int)sizeof(chunk) - 1) toRead = sizeof(chunk) - 1;
+
+        int n = _ackClient->readBytes(chunk, toRead);
+        if (n <= 0) break;
+        chunk[n] = '\0';
+
+        char combined[sizeof(_ackResidual) + sizeof(chunk)];
+        snprintf(combined, sizeof(combined), "%s%s", _ackResidual, chunk);
+
+        if (strstr(combined, ACK_EVENT_MARKER) != nullptr) {
+            found = true;
+        }
+
+        size_t len  = strlen(chunk);
+        size_t keep = (len < sizeof(_ackResidual) - 1) ? len : (sizeof(_ackResidual) - 1);
+        snprintf(_ackResidual, sizeof(_ackResidual), "%s", chunk + (len - keep));
+    }
+    return found;
 }
 
 // ------------------------------------------------------------
@@ -174,12 +250,16 @@ static void _ntfyTask(void*) {
         xSemaphoreGive(_mutex);
 
         if (doSend) {
+            // A fresh send always supersedes any ack we were still
+            // waiting on for a previous message.
+            _ackStreamClose();
+
             if (isEmergency) {
                 _doSendEmergencyMessage();
             } else if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
-                _ackSinceEpoch  = time(nullptr);
                 _pendingSinceMs = millis();
-                _lastPollMs     = millis();
+                _lastAckConnectAttemptMs = millis();
+                _ackStreamOpenConnection();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
                 _shared.state = NtfyState::WAITING_ACK;
                 xSemaphoreGive(_mutex);
@@ -188,16 +268,24 @@ static void _ntfyTask(void*) {
             uint32_t now = millis();
             if (now - _pendingSinceMs > NTFY_ACK_TIMEOUT_MS) {
                 LOG_WARN("NTFY", "Ack wait timed out, nobody replied");
+                _ackStreamClose();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
                 _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
-            } else if (now - _lastPollMs >= NTFY_ACK_POLL_INTERVAL_MS) {
-                _lastPollMs = now;
-                _doPollAck();
+            } else if (_ackStreamCheck()) {
+                LOG_OK("NTFY", "Acknowledgment received");
+                _ackStreamClose();
+                xSemaphoreTake(_mutex, portMAX_DELAY);
+                _shared.ackReceived = true;
+                _shared.state = NtfyState::IDLE;
+                xSemaphoreGive(_mutex);
+            } else if (!_ackStreamOpen && now - _lastAckConnectAttemptMs >= NTFY_ACK_RECONNECT_INTERVAL_MS) {
+                // Stream isn't open (first attempt failed, or it dropped) - retry.
+                _lastAckConnectAttemptMs = now;
+                _ackStreamOpenConnection();
             }
         }
 
-        // Same breathing room between consecutive HTTPS actions as before.
         vTaskDelay(pdMS_TO_TICKS(500));
     }
 }

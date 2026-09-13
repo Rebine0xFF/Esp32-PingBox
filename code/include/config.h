@@ -70,9 +70,13 @@ constexpr uint32_t TIME_UPDATE_INTERVAL_MS  = 1000;      // throttle for re-form
 // ------------------------------------------------------------
 
 constexpr char NTFY_BASE_URL[] = "https://ntfy.sh";
+constexpr char NTFY_HOST[]     = "ntfy.sh";   // bare hostname, used for the raw ack subscribe connection
 
-constexpr uint32_t NTFY_ACK_POLL_INTERVAL_MS = 8000;
-constexpr uint32_t NTFY_ACK_TIMEOUT_MS       = 600000;
+// How often to retry (re)opening the ack subscribe connection if it's
+// down. Once open, it stays open for the whole wait - this is no longer
+// a "poll every N ms" interval like before.
+constexpr uint32_t NTFY_ACK_RECONNECT_INTERVAL_MS = 8000;
+constexpr uint32_t NTFY_ACK_TIMEOUT_MS            = 600000;
 
 // ------------------------------------------------------------
 //  Miscellaneous
