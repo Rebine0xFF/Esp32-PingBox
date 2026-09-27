@@ -83,6 +83,7 @@ constexpr uint32_t NTFY_ACK_TIMEOUT_MS            = 600000;
 // ------------------------------------------------------------
 
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+constexpr uint32_t MIN_CALL_DURATION_GUARD_MS = 10000;
 
 // Info screen updates are deferred while the encoder is actively
 // rotating, and fire once it has been idle for this long (ms).

@@ -93,6 +93,7 @@ void loop() {
     enum class LoopCallState { IDLE, RUNNING, PAUSED };
     static LoopCallState _callState = LoopCallState::IDLE;
     static int  _callTargetTotalMinutes = 0;
+    static uint32_t _callStartMs = 0;   // guards against near-instant completion at a minute boundary
 
     // Set when the send button is pressed while WiFi/NTP aren't ready yet.
     // The actual Discord call is retried every loop() until both are ready.
@@ -157,6 +158,11 @@ void loop() {
             int remaining = _callTargetTotalMinutes - currentTotalMinutes;
             if (remaining < 0) remaining = 0;
 
+            // See MIN_CALL_DURATION_GUARD_MS: without this, a short duration
+            // set right at a minute boundary could reach zero within
+            // seconds, queuing a second send right behind the first one.
+            bool minDurationElapsed = (millis() - _callStartMs) >= MIN_CALL_DURATION_GUARD_MS;
+
             if (encPressed) {
                 // Pause: freeze remaining time and seed encoder for adjustments.
                 _callState = LoopCallState::PAUSED;
@@ -164,7 +170,7 @@ void loop() {
                 wheelDuration = remaining;
                 renderState = CallState::PAUSED;
                 LOG_INFO("MAIN", "Countdown paused at %d min remaining", remaining);
-            } else if (remaining <= 0) {
+            } else if (remaining <= 0 && minDurationElapsed) {
                 wheelDuration = 0;
                 renderState = CallState::NONE;
                 LOG_INFO("MAIN", "Countdown reached zero, sending meal-time notification");
@@ -347,7 +353,8 @@ void loop() {
         LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d)", encoderDuration, isUpdate);
 
         _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-        _callState = LoopCallState::RUNNING;
+        _callState   = LoopCallState::RUNNING;
+        _callStartMs = millis();
 
         // Update main display immediately to show running hourglass.
         screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
