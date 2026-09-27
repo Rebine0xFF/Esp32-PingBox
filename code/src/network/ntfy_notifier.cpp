@@ -172,7 +172,10 @@ static bool _ackStreamOpenConnection() {
     _ackClient->setHandshakeTimeout(8);   // seconds - bounds the handshake loop itself
 
     uint32_t startMs = millis();
-    if (!_ackClient->connect(NTFY_HOST, 443)) {
+    // Explicit 8s connect timeout: without it, connect() (which also does
+    // the DNS lookup for NTFY_HOST) was observed to hang 10-21s on a
+    // struggling network, well past the handshake timeout above.
+    if (!_ackClient->connect(NTFY_HOST, 443, 8000)) {
         LOG_WARN("NTFY", "Ack stream connect failed after %lu ms", (unsigned long)(millis() - startMs));
         delete _ackClient;
         _ackClient = nullptr;
@@ -256,12 +259,24 @@ static void _ntfyTask(void*) {
 
             if (isEmergency) {
                 _doSendEmergencyMessage();
+                xSemaphoreTake(_mutex, portMAX_DELAY);
+                _shared.state = NtfyState::IDLE;
+                xSemaphoreGive(_mutex);
             } else if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
                 _pendingSinceMs = millis();
                 _lastAckConnectAttemptMs = millis();
                 _ackStreamOpenConnection();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
                 _shared.state = NtfyState::WAITING_ACK;
+                xSemaphoreGive(_mutex);
+            } else {
+                // Send failed: nothing to wait an ack for. Without this,
+                // a leftover WAITING_ACK from a previous message made the
+                // worker keep retrying a doomed ack-stream reconnect every
+                // NTFY_ACK_RECONNECT_INTERVAL_MS, hammering an already
+                // struggling network.
+                xSemaphoreTake(_mutex, portMAX_DELAY);
+                _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
             }
         } else if (stateSnapshot == NtfyState::WAITING_ACK) {

@@ -10,6 +10,7 @@ void wifiManagerInit() {
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     delay(50);
+    WiFi.setSleep(false);
     LOG_INFO("WIFI", "Connecting to SSID '%s'...", WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     _lastAttemptMs = millis();
