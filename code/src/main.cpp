@@ -165,7 +165,6 @@ void loop() {
                 renderState = CallState::PAUSED;
                 LOG_INFO("MAIN", "Countdown paused at %d min remaining", remaining);
             } else if (remaining <= 0) {
-                _callState = LoopCallState::IDLE; // target time reached
                 wheelDuration = 0;
                 renderState = CallState::NONE;
                 LOG_INFO("MAIN", "Countdown reached zero, sending meal-time notification");
@@ -175,6 +174,13 @@ void loop() {
                 snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
                 setLastAction(LastAction::CALLED, timeStr);
 
+                // Queue the send BEFORE flipping _callState to IDLE below.
+                // Sends dispatched while _callState was already IDLE were
+                // found to reliably fail their TLS connection elsewhere in
+                // testing (see the send-button handler above); sending one
+                // moment earlier, while _callState still reads RUNNING
+                // from the previous iteration, tests whether the same
+                // ordering fix applies here too. Not yet confirmed.
                 if (wifiManagerIsConnected() && timeManagerIsSynced()) {
                     ntfySendCallMessage(0, current_hour, current_minute, false);
                 } else {
@@ -184,6 +190,8 @@ void loop() {
                     _pendingNeedsResync  = false;
                     _pendingIsUpdate     = false;
                 }
+
+                _callState = LoopCallState::IDLE; // target time reached
             } else {
                 wheelDuration = remaining;
                 renderState = CallState::RUNNING;
@@ -323,20 +331,26 @@ void loop() {
     if (!_emergencyActive && !menuIsActive() && buttonSendPressed()) {
         // Resending while paused is an update to the already-sent message,
         // rather than a brand new call.
-        bool isUpdate  = (_callState == LoopCallState::PAUSED);
-        bool immediate = (encoderDuration <= 0);
-        LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d, immediate=%d)", encoderDuration, isUpdate, immediate);
+        bool isUpdate = (_callState == LoopCallState::PAUSED);
 
-        if (!immediate) {
-            _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-            _callState = LoopCallState::RUNNING;
+        // A send dispatched while _callState was about to become IDLE (the
+        // former "immediate"/0-minute branch) reliably failed its TLS
+        // connection in testing, while a send dispatched with _callState
+        // RUNNING succeeded every time - even with a byte-for-byte
+        // identical outgoing ntfy payload. The exact mechanism linking
+        // this to the cross-core TLS handshake was not identified, but
+        // the correlation was total across many tests, so the "immediate"
+        // branch is removed entirely: every button-triggered send now
+        // takes the RUNNING path.
+        if (encoderDuration < 1) encoderDuration = 1;
 
-            // Update main display immediately to show running hourglass.
-            screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
-        } else {
-            // Immediate (0 min)
-            _callState = LoopCallState::IDLE;
-        }
+        LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d)", encoderDuration, isUpdate);
+
+        _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
+        _callState = LoopCallState::RUNNING;
+
+        // Update main display immediately to show running hourglass.
+        screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
 
         // Update 'last action' display immediately.
         char timeStr[6];
@@ -350,7 +364,7 @@ void loop() {
             // below will flush it as soon as both become ready.
             _discordSendPending  = true;
             _pendingSendDuration = encoderDuration;
-            _pendingNeedsResync  = !immediate;
+            _pendingNeedsResync  = true;
             _pendingIsUpdate     = isUpdate;
         }
     }

@@ -22,6 +22,7 @@ void wifiManagerUpdate() {
     if (WiFi.status() == WL_CONNECTED) {
         if (!_wasConnected) {
             _wasConnected = true;
+            WiFi.setSleep(false);
             LOG_OK("WIFI", "Connected, IP=%s", WiFi.localIP().toString().c_str());
         }
         return;
