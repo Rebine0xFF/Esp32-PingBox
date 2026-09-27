@@ -257,6 +257,14 @@ static void _ntfyTask(void*) {
             // waiting on for a previous message.
             _ackStreamClose();
 
+            // Breathing room between tearing down the previous TLS socket
+            // and opening a new one: a 16ms gap between closing an idle
+            // ack-stream connection and immediately starting a new send
+            // was directly observed to precede a handshake failure - the
+            // same "back-to-back HTTPS actions" issue documented from the
+            // original Discord implementation.
+            vTaskDelay(pdMS_TO_TICKS(300));
+
             if (isEmergency) {
                 _doSendEmergencyMessage();
                 xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -270,14 +278,33 @@ static void _ntfyTask(void*) {
                 _shared.state = NtfyState::WAITING_ACK;
                 xSemaphoreGive(_mutex);
             } else {
-                // Send failed: nothing to wait an ack for. Without this,
-                // a leftover WAITING_ACK from a previous message made the
-                // worker keep retrying a doomed ack-stream reconnect every
-                // NTFY_ACK_RECONNECT_INTERVAL_MS, hammering an already
-                // struggling network.
-                xSemaphoreTake(_mutex, portMAX_DELAY);
-                _shared.state = NtfyState::IDLE;
-                xSemaphoreGive(_mutex);
+                // First attempt failed. Verbose logs showed failures hang
+                // for a fixed ~8s with zero server response - consistent
+                // with real intermittent packet loss on the network path
+                // rather than a fixable local bug. A single short-delay
+                // retry is cheap insurance against exactly that kind of
+                // transient flake.
+                LOG_WARN("NTFY", "Send failed, retrying once after a short delay");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+
+                if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
+                    _pendingSinceMs = millis();
+                    _lastAckConnectAttemptMs = millis();
+                    _ackStreamOpenConnection();
+                    xSemaphoreTake(_mutex, portMAX_DELAY);
+                    _shared.state = NtfyState::WAITING_ACK;
+                    xSemaphoreGive(_mutex);
+                } else {
+                    // Nothing to wait an ack for. Without this, a leftover
+                    // WAITING_ACK from a previous message made the worker
+                    // keep retrying a doomed ack-stream reconnect every
+                    // NTFY_ACK_RECONNECT_INTERVAL_MS, hammering an already
+                    // struggling network.
+                    LOG_ERROR("NTFY", "Retry also failed, giving up on this send");
+                    xSemaphoreTake(_mutex, portMAX_DELAY);
+                    _shared.state = NtfyState::IDLE;
+                    xSemaphoreGive(_mutex);
+                }
             }
         } else if (stateSnapshot == NtfyState::WAITING_ACK) {
             uint32_t now = millis();
