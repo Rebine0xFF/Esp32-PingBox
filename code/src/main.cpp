@@ -200,6 +200,7 @@ void loop() {
                     _pendingNeedsResync = false;
                 }
 
+                ntfyListenForReadyAck();
                 _callState = LoopCallState::IDLE;
             } else {
                 wheelDuration = remaining;
@@ -342,40 +343,56 @@ void loop() {
         // rather than a brand new call.
         bool isUpdate = (_callState == LoopCallState::PAUSED);
 
-        // A send dispatched while _callState was about to become IDLE (the
-        // former "immediate"/0-minute branch) reliably failed its TLS
-        // connection in testing, while a send dispatched with _callState
-        // RUNNING succeeded every time - even with a byte-for-byte
-        // identical outgoing ntfy payload. The exact mechanism linking
-        // this to the cross-core TLS handshake was not identified, but
-        // the correlation was total across many tests, so the "immediate"
-        // branch is removed entirely: every button-triggered send now
-        // takes the RUNNING path.
-        if (encoderDuration < 1) encoderDuration = 1;
+        // Wheel at 0, and we are not already counting down: immediate call.
+        // This is the manual worker path (the one that succeeds), not the
+        // old expiry POST. Staying IDLE is required: RUNNING with a target
+        // of +0 min would trip the expiry branch after the 10s guard and
+        // start a second ack listen for a countdown that never existed.
+        bool immediate = (encoderDuration < 1) && (_callState != LoopCallState::RUNNING);
 
-        LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d)", encoderDuration, isUpdate);
+        if (immediate) {
+            LOG_INFO("MAIN", "Send button pressed (immediate, update=%d)", isUpdate);
 
-        _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
-        _callState   = LoopCallState::RUNNING;
-        _callStartMs = millis();
+            _callState = LoopCallState::IDLE;
+            _callTargetTotalMinutes = 0;
+            _forceMainRedraw = true;
+            screenMainUpdate(0, current_hour, current_minute, CallState::NONE);
 
-        // Update main display immediately to show running hourglass.
-        screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
+            char timeStr[6];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
+            setLastAction(LastAction::CALLED, timeStr);
 
-        // Update 'last action' display immediately.
-        char timeStr[6];
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
-        setLastAction(LastAction::CALLED, timeStr);
-
-        if (wifiManagerIsConnected() && timeManagerIsSynced()) {
-            ntfySendCallMessage(encoderDuration, current_hour, current_minute, isUpdate);
+            if (wifiManagerIsConnected() && timeManagerIsSynced()) {
+                ntfySendCallMessage(0, current_hour, current_minute, isUpdate);
+            } else {
+                _discordSendPending  = true;
+                _pendingSendDuration = 0;
+                _pendingNeedsResync  = false;
+                _pendingIsUpdate     = isUpdate;
+            }
         } else {
-            // Network/time not ready yet: queue it, the pending-send block
-            // below will flush it as soon as both become ready.
-            _discordSendPending  = true;
-            _pendingSendDuration = encoderDuration;
-            _pendingNeedsResync  = true;
-            _pendingIsUpdate     = isUpdate;
+            if (encoderDuration < 1) encoderDuration = 1;
+
+            LOG_INFO("MAIN", "Send button pressed (duration=%d min, update=%d)", encoderDuration, isUpdate);
+
+            _callTargetTotalMinutes = current_hour * 60 + current_minute + encoderDuration;
+            _callState   = LoopCallState::RUNNING;
+            _callStartMs = millis();
+
+            screenMainUpdate(encoderDuration, current_hour, current_minute, CallState::RUNNING);
+
+            char timeStr[6];
+            snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
+            setLastAction(LastAction::CALLED, timeStr);
+
+            if (wifiManagerIsConnected() && timeManagerIsSynced()) {
+                ntfySendCallMessage(encoderDuration, current_hour, current_minute, isUpdate);
+            } else {
+                _discordSendPending  = true;
+                _pendingSendDuration = encoderDuration;
+                _pendingNeedsResync  = true;
+                _pendingIsUpdate     = isUpdate;
+            }
         }
     }
 

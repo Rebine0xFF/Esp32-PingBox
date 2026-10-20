@@ -15,15 +15,17 @@ enum class NtfyState { IDLE, WAITING_ACK };
 
 // Fields touched by BOTH tasks (main loop + background worker) - guarded by _mutex.
 struct NtfyShared {
-    volatile NtfyState state = NtfyState::IDLE;
-    bool sendRequested       = false;
-    int  sendDurationMinutes = 0;
-    int  sendHour            = 0;
-    int  sendMinute          = 0;
-    bool sendIsUpdate        = false;
-    bool sendIsEmergency     = false;
-    bool ackReceived         = false;
-    bool cancelReadyRequested = false;
+    volatile NtfyState state   = NtfyState::IDLE;
+    bool sendRequested         = false;
+    int  sendDurationMinutes   = 0;
+    int  sendHour              = 0;
+    int  sendMinute            = 0;
+    bool sendIsUpdate          = false;
+    bool sendIsEmergency       = false;
+    bool ackReceived           = false;
+    bool cancelReadyRequested  = false;
+    bool     armAckRequested   = false;
+    uint32_t armAckNotBeforeMs = 0;
 };
 
 static NtfyShared        _shared;
@@ -79,6 +81,11 @@ static int _ntfyRequest(const char* method, const String& url, const String& bod
     return code;
 }
 
+static String _ackActionsHeader() {
+    return String("http, Compris, ") + NTFY_BASE_URL + "/" + NTFY_TOPIC_ACK
+           + ", method=POST, body=ACK, clear=true";
+}
+
 static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool isUpdate) {
     char body[168];
     const char* prefix = isUpdate ? "[UPDATE] " : "";
@@ -94,12 +101,11 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     }
 
     String url     = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL;
-    String actions = String("http, Compris, ") + NTFY_BASE_URL + "/" + NTFY_TOPIC_ACK
-                    + ", method=POST, body=ACK, clear=true";
+    String actions = _ackActionsHeader();
     String response;
 
     LOG_INFO("NTFY", "Sending call message (%d min)...", duration_minutes);
-        int code = _ntfyRequest("POST", url, body, "PingBox", "default", actions.c_str(), nullptr, response);
+    int code = _ntfyRequest("POST", url, body, "PingBox", "default", actions.c_str(), nullptr, response);
     if (code != 200) {
         _setServerStatus(NtfyServerStatus::ERROR);
         LOG_ERROR("NTFY", "Send failed, HTTP code=%d", code);
@@ -150,12 +156,13 @@ static bool _doScheduleReadyMessage(int durationMinutes) {
     char delayHeader[12];
     snprintf(delayHeader, sizeof(delayHeader), "%ds", delaySec);
 
-    String url = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL + "/" + NTFY_READY_SEQUENCE_ID;
+    String url     = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL + "/" + NTFY_READY_SEQUENCE_ID;
+    String actions = _ackActionsHeader();
     String response;
 
     LOG_INFO("NTFY", "Scheduling ready reminder in %d s", delaySec);
     int code = _ntfyRequest("POST", url, "On mange maintenant.",
-                             "PingBox", "high", nullptr, delayHeader, response);
+                            "PingBox", "high", actions.c_str(), delayHeader, response);
     if (code != 200) {
         _setServerStatus(NtfyServerStatus::ERROR);
         LOG_ERROR("NTFY", "Ready schedule failed, HTTP code=%d", code);
@@ -294,6 +301,8 @@ static void _ntfyTask(void*) {
         bool doCancel = false;
         int duration = 0, hour = 0, minute = 0;
         bool isUpdate = false, isEmergency = false;
+        bool doArmExtend = false;
+        bool doArmOpen = false;
 
         xSemaphoreTake(_mutex, portMAX_DELAY);
         stateSnapshot = _shared.state;
@@ -308,6 +317,16 @@ static void _ntfyTask(void*) {
         } else if (_shared.cancelReadyRequested) {
             doCancel = true;
             _shared.cancelReadyRequested = false;
+        } else if (_shared.armAckRequested) {
+            // Already listening: just extend the window, no new handshake.
+            // Otherwise wait out the minute-tick redraw before connecting.
+            if (_ackStreamOpen || stateSnapshot == NtfyState::WAITING_ACK) {
+                doArmExtend = true;
+                _shared.armAckRequested = false;
+            } else if (millis() >= _shared.armAckNotBeforeMs) {
+                doArmOpen = true;
+                _shared.armAckRequested = false;
+            }
         }
         xSemaphoreGive(_mutex);
 
@@ -330,6 +349,7 @@ static void _ntfyTask(void*) {
                 }
                 xSemaphoreTake(_mutex, portMAX_DELAY);
                 _shared.cancelReadyRequested = false;
+                _shared.armAckRequested = false;
                 _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
             } else {
@@ -352,6 +372,23 @@ static void _ntfyTask(void*) {
                             _doScheduleReadyMessage(duration);
                         }
                     }
+                }
+
+                if (duration < 1 && sent && isUpdate) {
+                    // "Right now" replaces a paused countdown. Cancel before
+                    // the ack stream opens: a later cancel would close it
+                    // and handshake again immediately.
+                    vTaskDelay(pdMS_TO_TICKS(300));
+                    if (!_doCancelReadyMessage()) {
+                        LOG_WARN("NTFY", "Ready cancel failed, retrying once");
+                        vTaskDelay(pdMS_TO_TICKS(2000));
+                        _doCancelReadyMessage();
+                    }
+                }
+                if (duration < 1 && sent) {
+                    xSemaphoreTake(_mutex, portMAX_DELAY);
+                    _shared.cancelReadyRequested = false;
+                    xSemaphoreGive(_mutex);
                 }
 
                 xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -389,6 +426,19 @@ static void _ntfyTask(void*) {
                 _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
             }
+        } else if (doArmExtend) {
+            _pendingSinceMs = millis();
+            xSemaphoreTake(_mutex, portMAX_DELAY);
+            _shared.state = NtfyState::WAITING_ACK;
+            xSemaphoreGive(_mutex);
+            LOG_INFO("NTFY", "Ack listen extended for the ready reminder");
+        } else if (doArmOpen) {
+            _pendingSinceMs = millis();
+            _lastAckConnectAttemptMs = millis();
+            xSemaphoreTake(_mutex, portMAX_DELAY);
+            _shared.state = NtfyState::WAITING_ACK;
+            xSemaphoreGive(_mutex);
+            _ackStreamOpenConnection();
         } else if (stateSnapshot == NtfyState::WAITING_ACK) {
             uint32_t now = millis();
             if (now - _pendingSinceMs > NTFY_ACK_TIMEOUT_MS) {
@@ -432,7 +482,12 @@ bool ntfySendCallMessage(int duration_minutes, int current_hour, int current_min
         _shared.sendMinute           = current_minute;
         _shared.sendIsUpdate         = isUpdate;
         _shared.sendIsEmergency      = false;
-        _shared.cancelReadyRequested = false;
+        _shared.armAckRequested      = false;
+        if (duration_minutes >= 1) {
+            // This publish replaces the delayed reminder. A pending cancel
+            // would run afterwards and tear down the new ack stream.
+            _shared.cancelReadyRequested = false;
+        }
         accepted = true;
     }
     xSemaphoreGive(_mutex);
@@ -462,6 +517,13 @@ bool ntfySendEmergencyMessage(int current_hour, int current_minute) {
 void ntfyCancelReadyMessage() {
     xSemaphoreTake(_mutex, portMAX_DELAY);
     _shared.cancelReadyRequested = true;
+    xSemaphoreGive(_mutex);
+}
+
+void ntfyListenForReadyAck() {
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    _shared.armAckRequested = true;
+    _shared.armAckNotBeforeMs = millis() + NTFY_READY_ACK_SETTLE_MS;
     xSemaphoreGive(_mutex);
 }
 

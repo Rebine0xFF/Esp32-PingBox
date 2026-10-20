@@ -5,7 +5,7 @@
 void encoderInit();
 
 // --- Time selection ---
-int  encoderGetMinutes();   // (1–90 min)
+int  encoderGetMinutes();   // (0–90 min)
 uint32_t encoderGetLastChangeMs();
 
 // --- Pause ---

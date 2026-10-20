@@ -86,6 +86,10 @@ constexpr char NTFY_READY_SEQUENCE_ID[] = "pingbox-meal-ready";
 // ntfy rejects a delayed publish shorter than 10 seconds.
 constexpr int NTFY_MIN_DELAY_SEC = 10;
 
+// Countdown expiry redraws both OLEDs. Opening the ack stream in that
+// same instant is the handshake that used to fail, so wait it out.
+constexpr uint32_t NTFY_READY_ACK_SETTLE_MS = 1500;
+
 // ------------------------------------------------------------
 //  Miscellaneous
 // ------------------------------------------------------------

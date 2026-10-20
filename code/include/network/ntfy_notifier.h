@@ -15,9 +15,9 @@ enum class NtfyServerStatus { PAUSED, OK, ERROR };
 
 void ntfyNotifierInit();
 
-// Queues a call message + ack action. When duration_minutes >= 1,
-// also arms (or replaces) the delayed "meal is now" reminder.
-// Returns false only if a send is already queued.
+// Queues a call message + ack action. duration_minutes >= 1 also arms
+// (or replaces) the delayed reminder. duration 0 is an immediate call:
+// no reminder is armed. Returns false only if a send is already queued.
 bool ntfySendCallMessage(int duration_minutes, int current_hour, int current_minute, bool isUpdate);
 
 // Queues a distinctive emergency alert. No ack tracking.
@@ -27,6 +27,10 @@ bool ntfySendEmergencyMessage(int current_hour, int current_minute);
 // Drops the armed meal reminder. Always accepted. A send queued
 // afterwards replaces the reminder and clears this request.
 void ntfyCancelReadyMessage();
+
+// Starts or extends the ack listen window so the delayed "meal is now"
+// notification can be acknowledged. Does not publish anything.
+void ntfyListenForReadyAck();
 
 // Checks if an ACK was received since last call, and clears the flag.
 // Safe to call from the main UI thread.
