@@ -23,6 +23,7 @@ void setup() {
     LOG_BEGIN();
     LOG_LINE();
     LOG_INFO("MAIN", "PingBox booting up...");
+    wifiManagerInit();
 
     screenMainInit();
     screenInfoInit();
@@ -31,7 +32,6 @@ void setup() {
     servoControlInit();
     LOG_OK("MAIN", "Displays, inputs and actuators initialized");
 
-    wifiManagerInit();
     timeManagerInit();
     ntfyNotifierInit();
     LOG_OK("MAIN", "Network stack initialized (WiFi/NTP/Ntfy)");
