@@ -78,6 +78,14 @@ constexpr char NTFY_HOST[]     = "ntfy.sh";   // bare hostname, used for the raw
 constexpr uint32_t NTFY_ACK_RECONNECT_INTERVAL_MS = 8000;
 constexpr uint32_t NTFY_ACK_TIMEOUT_MS            = 600000;
 
+// Stable sequence id for the server-side "meal is now" reminder.
+// Republishing this URL replaces the pending reminder; deleting it cancels it.
+// Not a secret: the topic name already is.
+constexpr char NTFY_READY_SEQUENCE_ID[] = "pingbox-meal-ready";
+
+// ntfy rejects a delayed publish shorter than 10 seconds.
+constexpr int NTFY_MIN_DELAY_SEC = 10;
+
 // ------------------------------------------------------------
 //  Miscellaneous
 // ------------------------------------------------------------

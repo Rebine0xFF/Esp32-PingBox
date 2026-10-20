@@ -9,6 +9,7 @@
 #include <freertos/semphr.h>
 #include <atomic>
 #include <string.h>
+#include <time.h>
 
 enum class NtfyState { IDLE, WAITING_ACK };
 
@@ -22,6 +23,7 @@ struct NtfyShared {
     bool sendIsUpdate        = false;
     bool sendIsEmergency     = false;
     bool ackReceived         = false;
+    bool cancelReadyRequested = false;
 };
 
 static NtfyShared        _shared;
@@ -40,16 +42,16 @@ static void _setServerStatus(NtfyServerStatus s) {
 
 static int _ntfyRequest(const char* method, const String& url, const String& body,
                          const char* title, const char* priority, const char* actions,
+                         const char* delay,
                          String& response) {
     uint32_t startMs = millis();
 
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(5000);
-    // setTimeout() only bounds socket reads once connected - it does NOT
-    // bound the mbedTLS handshake retry loop itself, which was observed
-    // to hang up to ~60s despite the 5s timeout above. This is measured
-    // in seconds, not milliseconds.
+    // setTimeout() only bounds socket reads once connected. It does not
+    // bound the mbedTLS handshake loop, which has hung ~60s without this.
+    // Unit is seconds, not milliseconds.
     client.setHandshakeTimeout(8);
 
     HTTPClient http;
@@ -57,10 +59,6 @@ static int _ntfyRequest(const char* method, const String& url, const String& bod
     http.setTimeout(5000);
     bool began = http.begin(client, url);
 
-    // Diagnostic: http.begin()/connect() runs a blocking DNS lookup that is
-    // NOT bounded by setConnectTimeout(). If this massively exceeds our
-    // configured timeouts, it confirms the stall happened in DNS, not in
-    // the request/response itself.
     uint32_t beginDoneMs = millis();
     if (beginDoneMs - startMs > 6000) {
         LOG_WARN("NTFY", "http.begin()/DNS took %lu ms (way beyond the 5s connect timeout)",
@@ -71,6 +69,7 @@ static int _ntfyRequest(const char* method, const String& url, const String& bod
     if (title)    http.addHeader("Title", title);
     if (priority) http.addHeader("Priority", priority);
     if (actions)  http.addHeader("Actions", actions);
+    if (delay)    http.addHeader("In", delay);
     http.addHeader("Connection", "close");
 
     int code = (strcmp(method, "POST") == 0) ? http.POST(body) : http.GET();
@@ -100,7 +99,7 @@ static bool _doSendCallMessage(int duration_minutes, int hour, int minute, bool 
     String response;
 
     LOG_INFO("NTFY", "Sending call message (%d min)...", duration_minutes);
-    int code = _ntfyRequest("POST", url, body, "PingBox", "default", actions.c_str(), response);
+        int code = _ntfyRequest("POST", url, body, "PingBox", "default", actions.c_str(), nullptr, response);
     if (code != 200) {
         _setServerStatus(NtfyServerStatus::ERROR);
         LOG_ERROR("NTFY", "Send failed, HTTP code=%d", code);
@@ -117,7 +116,7 @@ static bool _doSendEmergencyMessage() {
 
     LOG_WARN("NTFY", "Sending EMERGENCY message...");
     int code = _ntfyRequest("POST", url, "URGENCE - VIENS TOUT DE SUITE",
-                             "PingBox URGENT", "urgent", nullptr, response);
+                             "PingBox URGENT", "urgent", nullptr, nullptr, response);
     if (code != 200) {
         _setServerStatus(NtfyServerStatus::ERROR);
         LOG_ERROR("NTFY", "Emergency send failed, HTTP code=%d", code);
@@ -125,6 +124,62 @@ static bool _doSendEmergencyMessage() {
     }
     _setServerStatus(NtfyServerStatus::OK);
     LOG_OK("NTFY", "Emergency message sent");
+    return true;
+}
+
+static bool _cancelRequestedNow() {
+    bool cancel = false;
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    cancel = _shared.cancelReadyRequested;
+    xSemaphoreGive(_mutex);
+    return cancel;
+}
+
+// Arms the meal reminder on ntfy itself. Delay matches the local
+// countdown, which expires on the minute boundary rather than after
+// an exact number of seconds.
+static bool _doScheduleReadyMessage(int durationMinutes) {
+    time_t now;
+    time(&now);
+    struct tm timeinfo;
+    localtime_r(&now, &timeinfo);
+
+    int delaySec = durationMinutes * 60 - (int)timeinfo.tm_sec;
+    if (delaySec < NTFY_MIN_DELAY_SEC) delaySec = NTFY_MIN_DELAY_SEC;
+
+    char delayHeader[12];
+    snprintf(delayHeader, sizeof(delayHeader), "%ds", delaySec);
+
+    String url = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL + "/" + NTFY_READY_SEQUENCE_ID;
+    String response;
+
+    LOG_INFO("NTFY", "Scheduling ready reminder in %d s", delaySec);
+    int code = _ntfyRequest("POST", url, "On mange maintenant.",
+                             "PingBox", "high", nullptr, delayHeader, response);
+    if (code != 200) {
+        _setServerStatus(NtfyServerStatus::ERROR);
+        LOG_ERROR("NTFY", "Ready schedule failed, HTTP code=%d", code);
+        return false;
+    }
+
+    _setServerStatus(NtfyServerStatus::OK);
+    LOG_OK("NTFY", "Ready reminder scheduled: %.120s", response.c_str());
+    return true;
+}
+
+static bool _doCancelReadyMessage() {
+    String url = String(NTFY_BASE_URL) + "/" + NTFY_TOPIC_APPEL + "/"
+                 + NTFY_READY_SEQUENCE_ID + "/delete";
+    String response;
+
+    LOG_INFO("NTFY", "Cancelling ready reminder");
+    int code = _ntfyRequest("GET", url, "", nullptr, nullptr, nullptr, nullptr, response);
+    // 404: nothing was armed. That is a successful cancel.
+    if (code != 200 && code != 404) {
+        LOG_WARN("NTFY", "Ready cancel failed, HTTP code=%d", code);
+        return false;
+    }
+    LOG_OK("NTFY", "Ready reminder cancelled (HTTP %d)", code);
     return true;
 }
 
@@ -236,6 +291,7 @@ static void _ntfyTask(void*) {
     for (;;) {
         NtfyState stateSnapshot;
         bool doSend = false;
+        bool doCancel = false;
         int duration = 0, hour = 0, minute = 0;
         bool isUpdate = false, isEmergency = false;
 
@@ -249,62 +305,89 @@ static void _ntfyTask(void*) {
             isUpdate    = _shared.sendIsUpdate;
             isEmergency = _shared.sendIsEmergency;
             _shared.sendRequested = false;
+        } else if (_shared.cancelReadyRequested) {
+            doCancel = true;
+            _shared.cancelReadyRequested = false;
         }
         xSemaphoreGive(_mutex);
 
         if (doSend) {
-            // A fresh send always supersedes any ack we were still
-            // waiting on for a previous message.
+            // A fresh send supersedes any ack still open for the previous message.
             _ackStreamClose();
 
-            // Breathing room between tearing down the previous TLS socket
-            // and opening a new one: a 16ms gap between closing an idle
-            // ack-stream connection and immediately starting a new send
-            // was directly observed to precede a handshake failure - the
-            // same "back-to-back HTTPS actions" issue documented from the
-            // original Discord implementation.
+            // Closing one TLS session and opening another with only a few
+            // milliseconds between them has repeatedly preceded a handshake
+            // with no server response. Keep the gap.
             vTaskDelay(pdMS_TO_TICKS(300));
 
             if (isEmergency) {
                 _doSendEmergencyMessage();
+                vTaskDelay(pdMS_TO_TICKS(300));
+                if (!_doCancelReadyMessage()) {
+                    LOG_WARN("NTFY", "Ready cancel failed, retrying once");
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    _doCancelReadyMessage();
+                }
                 xSemaphoreTake(_mutex, portMAX_DELAY);
+                _shared.cancelReadyRequested = false;
                 _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
-            } else if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
-                _pendingSinceMs = millis();
-                _lastAckConnectAttemptMs = millis();
-                _ackStreamOpenConnection();
-                xSemaphoreTake(_mutex, portMAX_DELAY);
-                _shared.state = NtfyState::WAITING_ACK;
-                xSemaphoreGive(_mutex);
             } else {
-                // First attempt failed. Verbose logs showed failures hang
-                // for a fixed ~8s with zero server response - consistent
-                // with real intermittent packet loss on the network path
-                // rather than a fixable local bug. A single short-delay
-                // retry is cheap insurance against exactly that kind of
-                // transient flake.
-                LOG_WARN("NTFY", "Send failed, retrying once after a short delay");
-                vTaskDelay(pdMS_TO_TICKS(2000));
+                bool sent = _doSendCallMessage(duration, hour, minute, isUpdate);
+                if (!sent) {
+                    LOG_WARN("NTFY", "Send failed, retrying once after a short delay");
+                    vTaskDelay(pdMS_TO_TICKS(2000));
+                    sent = _doSendCallMessage(duration, hour, minute, isUpdate);
+                }
 
-                if (_doSendCallMessage(duration, hour, minute, isUpdate)) {
+                // Schedule only after the announcement itself succeeded, and
+                // only if the user did not pause while this send was in flight.
+                // The sequence id makes a retry a replace, not a second message.
+                if (sent && duration >= 1 && !_cancelRequestedNow()) {
+                    vTaskDelay(pdMS_TO_TICKS(300));
+                    if (!_doScheduleReadyMessage(duration)) {
+                        LOG_WARN("NTFY", "Ready schedule failed, retrying once");
+                        vTaskDelay(pdMS_TO_TICKS(2000));
+                        if (!_cancelRequestedNow()) {
+                            _doScheduleReadyMessage(duration);
+                        }
+                    }
+                }
+
+                xSemaphoreTake(_mutex, portMAX_DELAY);
+                if (sent) {
+                    _shared.state = NtfyState::WAITING_ACK;
+                } else {
+                    LOG_ERROR("NTFY", "Retry also failed, giving up on this send");
+                    _shared.state = NtfyState::IDLE;
+                }
+                xSemaphoreGive(_mutex);
+
+                if (sent) {
                     _pendingSinceMs = millis();
                     _lastAckConnectAttemptMs = millis();
                     _ackStreamOpenConnection();
-                    xSemaphoreTake(_mutex, portMAX_DELAY);
-                    _shared.state = NtfyState::WAITING_ACK;
-                    xSemaphoreGive(_mutex);
-                } else {
-                    // Nothing to wait an ack for. Without this, a leftover
-                    // WAITING_ACK from a previous message made the worker
-                    // keep retrying a doomed ack-stream reconnect every
-                    // NTFY_ACK_RECONNECT_INTERVAL_MS, hammering an already
-                    // struggling network.
-                    LOG_ERROR("NTFY", "Retry also failed, giving up on this send");
-                    xSemaphoreTake(_mutex, portMAX_DELAY);
-                    _shared.state = NtfyState::IDLE;
-                    xSemaphoreGive(_mutex);
                 }
+            }
+        } else if (doCancel) {
+            bool stillWaiting = (stateSnapshot == NtfyState::WAITING_ACK);
+
+            _ackStreamClose();
+            vTaskDelay(pdMS_TO_TICKS(300));
+            if (!_doCancelReadyMessage()) {
+                LOG_WARN("NTFY", "Ready cancel failed, retrying once");
+                vTaskDelay(pdMS_TO_TICKS(2000));
+                _doCancelReadyMessage();
+            }
+
+            // Pause must not drop a "Compris" that arrives afterwards.
+            if (stillWaiting && (millis() - _pendingSinceMs <= NTFY_ACK_TIMEOUT_MS)) {
+                _lastAckConnectAttemptMs = millis();
+                _ackStreamOpenConnection();
+            } else if (stillWaiting) {
+                xSemaphoreTake(_mutex, portMAX_DELAY);
+                _shared.state = NtfyState::IDLE;
+                xSemaphoreGive(_mutex);
             }
         } else if (stateSnapshot == NtfyState::WAITING_ACK) {
             uint32_t now = millis();
@@ -322,7 +405,6 @@ static void _ntfyTask(void*) {
                 _shared.state = NtfyState::IDLE;
                 xSemaphoreGive(_mutex);
             } else if (!_ackStreamOpen && now - _lastAckConnectAttemptMs >= NTFY_ACK_RECONNECT_INTERVAL_MS) {
-                // Stream isn't open (first attempt failed, or it dropped) - retry.
                 _lastAckConnectAttemptMs = now;
                 _ackStreamOpenConnection();
             }
@@ -344,12 +426,13 @@ bool ntfySendCallMessage(int duration_minutes, int current_hour, int current_min
     bool accepted = false;
     xSemaphoreTake(_mutex, portMAX_DELAY);
     if (!_shared.sendRequested) {
-        _shared.sendRequested       = true;
-        _shared.sendDurationMinutes = duration_minutes;
-        _shared.sendHour            = current_hour;
-        _shared.sendMinute          = current_minute;
-        _shared.sendIsUpdate        = isUpdate;
-        _shared.sendIsEmergency     = false;
+        _shared.sendRequested        = true;
+        _shared.sendDurationMinutes  = duration_minutes;
+        _shared.sendHour             = current_hour;
+        _shared.sendMinute           = current_minute;
+        _shared.sendIsUpdate         = isUpdate;
+        _shared.sendIsEmergency      = false;
+        _shared.cancelReadyRequested = false;
         accepted = true;
     }
     xSemaphoreGive(_mutex);
@@ -374,6 +457,12 @@ bool ntfySendEmergencyMessage(int current_hour, int current_minute) {
 
     if (!accepted) LOG_WARN("NTFY", "Emergency send rejected, a send is already queued");
     return accepted;
+}
+
+void ntfyCancelReadyMessage() {
+    xSemaphoreTake(_mutex, portMAX_DELAY);
+    _shared.cancelReadyRequested = true;
+    xSemaphoreGive(_mutex);
 }
 
 bool ntfyCheckAndClearAck() {
