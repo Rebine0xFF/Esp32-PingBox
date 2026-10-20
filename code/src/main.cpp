@@ -127,6 +127,7 @@ void loop() {
         digitalWrite(PIN_LED_BTN, LOW);
         screenInfoUpdateEmergency();
         ntfySendEmergencyMessage(current_hour, current_minute);
+        ntfyCancelReadyMessage();
 
     } else if (!emergencyRaw && _emergencyActive) {
         // Falling edge: switch was reset back to its rest position
@@ -169,35 +170,37 @@ void loop() {
                 encoderSetMinutes(remaining);
                 wheelDuration = remaining;
                 renderState = CallState::PAUSED;
+                // A pause means the announced time is no longer valid.
+                // Drop a send that has not left yet; cancel one ntfy already accepted.
+                _discordSendPending = false;
+                ntfyCancelReadyMessage();
                 LOG_INFO("MAIN", "Countdown paused at %d min remaining", remaining);
             } else if (remaining <= 0 && minDurationElapsed) {
                 wheelDuration = 0;
                 renderState = CallState::NONE;
-                LOG_INFO("MAIN", "Countdown reached zero, sending meal-time notification");
 
-                // Countdown reached zero: send immediate "meal is now" notification (reminder)
+                // The "meal is now" notification was published with a Delay
+                // header when the countdown started. Sending again here, on
+                // the minute tick, is the call that kept failing: both OLEDs
+                // redraw at that instant (software I2C included) while the
+                // ack stream is torn down for a new handshake. Local UI only.
+                LOG_INFO("MAIN", "Countdown reached zero (ready reminder already on ntfy)");
+
                 char timeStr[6];
                 snprintf(timeStr, sizeof(timeStr), "%02d:%02d", current_hour, current_minute);
                 setLastAction(LastAction::CALLED, timeStr);
 
-                // Queue the send BEFORE flipping _callState to IDLE below.
-                // Sends dispatched while _callState was already IDLE were
-                // found to reliably fail their TLS connection elsewhere in
-                // testing (see the send-button handler above); sending one
-                // moment earlier, while _callState still reads RUNNING
-                // from the previous iteration, tests whether the same
-                // ordering fix applies here too. Not yet confirmed.
-                if (wifiManagerIsConnected() && timeManagerIsSynced()) {
-                    ntfySendCallMessage(0, current_hour, current_minute, false);
-                } else {
-                    LOG_WARN("MAIN", "Network/time not ready, queuing send for later flush");
-                    _discordSendPending  = true;
+                if (_discordSendPending) {
+                    // The original announcement never left. The meal time has
+                    // already arrived, so flush it later as an immediate ping
+                    // instead of arming a reminder in the past.
+                    LOG_WARN("MAIN", "Original send never left; will announce immediately once network is up");
                     _pendingSendDuration = 0;
-                    _pendingNeedsResync  = false;
-                    _pendingIsUpdate     = false;
+                    _pendingIsUpdate = false;
+                    _pendingNeedsResync = false;
                 }
 
-                _callState = LoopCallState::IDLE; // target time reached
+                _callState = LoopCallState::IDLE;
             } else {
                 wheelDuration = remaining;
                 renderState = CallState::RUNNING;
