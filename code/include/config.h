@@ -95,6 +95,7 @@ constexpr uint32_t NTFY_READY_ACK_SETTLE_MS = 1500;
 // ------------------------------------------------------------
 
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 10000;
+constexpr uint32_t WIFI_DHCP_TIMEOUT_MS = 30000;
 constexpr uint32_t MIN_CALL_DURATION_GUARD_MS = 10000;
 
 // Info screen updates are deferred while the encoder is actively

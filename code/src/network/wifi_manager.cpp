@@ -6,8 +6,26 @@
 
 static uint32_t _lastAttemptMs = 0;
 
+static volatile bool     _associated        = false;
+static volatile uint32_t _associatedSinceMs = 0;
+
+static void _onWifiEvent(arduino_event_id_t event, arduino_event_info_t info) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            _associatedSinceMs = millis();
+            _associated = true;
+            break;
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            _associated = false;
+            break;
+        default:
+            break;
+    }
+}
+
 void wifiManagerInit() {
     WiFi.mode(WIFI_STA);
+    WiFi.onEvent(_onWifiEvent);
     WiFi.disconnect();
     delay(50);
     WiFi.setSleep(false);
@@ -34,6 +52,13 @@ void wifiManagerUpdate() {
     }
 
     uint32_t now = millis();
+
+    // Associated with the AP but no IP yet: DHCP is still running.
+    // Do not disconnect, that would restart the whole association.
+    if (_associated && (now - _associatedSinceMs) < WIFI_DHCP_TIMEOUT_MS) {
+        return;
+    }
+
     if (now - _lastAttemptMs > WIFI_RECONNECT_INTERVAL_MS) {
         _lastAttemptMs = now;
         LOG_INFO("WIFI", "Reconnect attempt...");
