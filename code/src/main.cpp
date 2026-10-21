@@ -470,4 +470,39 @@ void loop() {
             }
         }
     }
+
+
+
+
+
+    // ============================================================
+    //                            +
+    //                           +++
+    //                          +++++
+    //                            |
+    //            +---------------+---------------+
+    //            |    THE ONE SACRED LINE        |
+    //            +---------------+---------------+
+    //
+    //  Behold, traveler: the line below is HOLY.
+    //  For two months the PingBox suffered in darkness, its TLS
+    //  handshakes cast into the void, its packets lost in the
+    //  wilderness. Then came delay(1), and the network was healed.
+    //
+    //  loop() must never run without yielding the CPU. Core 1 shall
+    //  sleep, that the network stack on core 0 may live in peace.
+    //
+    //  THOU SHALT NOT REMOVE THIS LINE.
+    //  THOU SHALT NOT "OPTIMIZE" THIS LINE.
+    //  THOU SHALT NOT MOVE IT BEFORE THE END OF loop().
+    //
+    //  Whoever deletes it shall face the wrath of the intermittent
+    //  TLS failures, unto the seventh handshake. Amen.
+    //
+    //                ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
+    // ============================================================
+    delay(1);
+    // ============================================================
+    //   Blessed be the delay(1), and all who yield the CPU. Amen.
+    // ============================================================
 }
