@@ -43,8 +43,15 @@
 //  SERVO POSITIONS (degrees, 0–180)
 // ------------------------------------------------------------
 
+#define ENABLE_SERVO 1
+
 constexpr int SERVO_POS_IN    = 20;
 constexpr int SERVO_POS_OUT   = 160;
+
+// Pulse widths mapped to 0 and 180 "virtual" degrees. Kept narrower than
+// the SG90 datasheet range on purpose, to stay clear of the mechanical stops.
+constexpr int SERVO_PULSE_MIN_US = 800;
+constexpr int SERVO_PULSE_MAX_US = 2100;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////
 

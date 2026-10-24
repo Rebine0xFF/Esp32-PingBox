@@ -1,10 +1,27 @@
 #include "actuators/servo_control.h"
 #include "config.h"
 #include "utils/logger.h"
-#include <ESP32Servo.h>
 #include <Arduino.h>
 
-static Servo _servo;
+
+// ------------------------------------------------------------
+//  Direct LEDC PWM (no servo library). ESP32Servo 3.x does not match the
+//  Arduino-ESP32 2.0.17 core used by this project and caused erratic servo
+//  behavior. LEDC works on both 2.x and 3.x cores.
+// ------------------------------------------------------------
+static constexpr int      SERVO_LEDC_CHANNEL = 4;    // used on core 2.x only
+static constexpr uint32_t SERVO_PWM_FREQ_HZ  = 50;
+static constexpr uint8_t  SERVO_PWM_BITS     = 16;
+
+static bool _signalOn = false;   // true while a PWM signal is being sent to the servo
+
+static void _pwmWriteDuty(uint32_t duty) {
+    #if ESP_ARDUINO_VERSION_MAJOR >= 3
+        ledcWrite(PIN_SERVO, duty);
+    #else
+        ledcWrite(SERVO_LEDC_CHANNEL, duty);
+    #endif
+}
 
 // ------------------------------------------------------------
 //  Flag motion tuning (module-local on purpose: only this file uses them).
@@ -35,8 +52,16 @@ static int         _shakeLegsLeft = 0;
 
 
 void servoControlInit() {
-    // Standard frequency for SG90 servos is 50Hz
-    _servo.setPeriodHertz(50);
+
+    if (ENABLE_SERVO) {
+        #if ESP_ARDUINO_VERSION_MAJOR >= 3
+            ledcAttach(PIN_SERVO, SERVO_PWM_FREQ_HZ, SERVO_PWM_BITS);
+        #else
+            ledcSetup(SERVO_LEDC_CHANNEL, SERVO_PWM_FREQ_HZ, SERVO_PWM_BITS);
+            ledcAttachPin(PIN_SERVO, SERVO_LEDC_CHANNEL);
+        #endif
+            _pwmWriteDuty(0);   // no signal until the first move
+    }
 
     // Homing: the flag may have been left anywhere (e.g. power cut while
     // raised). Write the rest position once, hold it briefly, then cut
@@ -52,27 +77,32 @@ void servoControlInit() {
 }
 
 void servoControlSetPosition(int degrees) {
+    // Servo output disabled at build time: never touch the pin.
+    if (!ENABLE_SERVO) return;
+
     // Bound the degrees between our defined minimum and maximum limits
     if (degrees < SERVO_POS_IN) degrees = SERVO_POS_IN;
     if (degrees > SERVO_POS_OUT) degrees = SERVO_POS_OUT;
-    
-    // If the PWM signal was previously detached to save power, re-attach it
-    if (!_servo.attached()) {
-        _servo.attach(PIN_SERVO, 500, 2400);
-    }
-    
-    _servo.write(degrees);
+
+    // Map degrees (0-180) to a pulse width, then to a 16-bit LEDC duty
+    // for the 20 ms servo period.
+    uint32_t pulseUs = SERVO_PULSE_MIN_US
+                     + (uint32_t)(SERVO_PULSE_MAX_US - SERVO_PULSE_MIN_US) * degrees / 180;
+    uint32_t duty = (uint32_t)((uint64_t)pulseUs * ((1UL << SERVO_PWM_BITS) - 1)
+                               / (1000000UL / SERVO_PWM_FREQ_HZ));
+    _pwmWriteDuty(duty);
+    _signalOn = true;
 }
 
 void servoControlDetach() {
-    // Stop sending the PWM signal.
-    // This stops the servo from jittering and drawing idle current.
-    if (_servo.attached()) {
-        _servo.detach();
-        // Drive the pin LOW so the signal line never floats (a floating
-        // line can make the servo twitch).
-        pinMode(PIN_SERVO, OUTPUT);
-        digitalWrite(PIN_SERVO, LOW);
+    if (!ENABLE_SERVO) return;
+
+    // Duty 0 keeps the pin at a constant LOW: no pulses, so the servo stops
+    // driving its motor and draws almost no current. The LEDC channel stays
+    // attached (no attach/detach cycles).
+    if (_signalOn) {
+        _pwmWriteDuty(0);
+        _signalOn = false;
     }
 }
 
