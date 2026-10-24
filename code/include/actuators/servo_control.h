@@ -8,6 +8,6 @@ void servoControlDetach();
 void servoControlUpdate();
 // True while a move or its settle hold is in progress.
 bool servoControlIsBusy();
-// An acknowledgment arrived: raise the flag, or shake it if already up.
+// An acknowledgment arrived: raise the flag.
 void servoFlagAcknowledged();
 void servoFlagLower();

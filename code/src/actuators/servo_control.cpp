@@ -30,10 +30,6 @@ static void _pwmWriteDuty(uint32_t duty) {
 // ------------------------------------------------------------
 static constexpr int      FLAG_MOVE_STEP_DEG       = 2;      // degrees per step for raise/lower
 static constexpr uint32_t FLAG_MOVE_STEP_MS        = 15;     // ~130 deg/s
-static constexpr int      FLAG_SHAKE_STEP_DEG      = 4;      // faster steps while shaking
-static constexpr uint32_t FLAG_SHAKE_STEP_MS       = 12;
-static constexpr int      FLAG_SHAKE_AMPLITUDE_DEG = 12;     // swing below SERVO_POS_OUT
-static constexpr int      FLAG_SHAKE_CYCLES        = 3;
 static constexpr uint32_t FLAG_SETTLE_MS           = 300;    // keep the signal after the last step
 static constexpr uint32_t FLAG_MAX_DRIVE_MS        = 3000;   // hard cut-off per move
 
@@ -48,7 +44,6 @@ static uint32_t    _stepMs        = FLAG_MOVE_STEP_MS;
 static uint32_t    _lastStepMs    = 0;
 static uint32_t    _settleStartMs = 0;
 static uint32_t    _driveStartMs  = 0;
-static int         _shakeLegsLeft = 0;
 
 
 void servoControlInit() {
@@ -69,7 +64,6 @@ void servoControlInit() {
     _flagUp        = false;
     _posDeg        = SERVO_POS_IN;
     _targetDeg     = SERVO_POS_IN;
-    _shakeLegsLeft = 0;
     servoControlSetPosition(SERVO_POS_IN);
     _driveStartMs  = millis();
     _settleStartMs = _driveStartMs;
@@ -120,37 +114,21 @@ static void _beginMove(int target, int stepDeg, uint32_t stepMs) {
     _phase        = MotionPhase::MOVING;
 }
 
-static void _startShakeLeg() {
-    // Even count -> swing down, odd count -> back to the raised position.
-    int target = (_shakeLegsLeft % 2 == 0) ? (SERVO_POS_OUT - FLAG_SHAKE_AMPLITUDE_DEG)
-                                           : SERVO_POS_OUT;
-    _beginMove(target, FLAG_SHAKE_STEP_DEG, FLAG_SHAKE_STEP_MS);
-}
-
 void servoFlagLower() {
     if (!_flagUp) return;   // already down (or on its way down)
 
     _flagUp        = false;
-    _shakeLegsLeft = 0;
     LOG_INFO("SERVO", "Flag: lowering");
     _beginMove(SERVO_POS_IN, FLAG_MOVE_STEP_DEG, FLAG_MOVE_STEP_MS);
 }
 
 void servoFlagAcknowledged() {
-    if (!_flagUp) {
-        _flagUp        = true;
-        _shakeLegsLeft = 0;
-        LOG_INFO("SERVO", "Flag: raising");
-        _beginMove(SERVO_POS_OUT, FLAG_MOVE_STEP_DEG, FLAG_MOVE_STEP_MS);
-        return;
-    }
+    // Already up (or on its way up): nothing to do, the flag stays raised.
+    if (_flagUp) return;
 
-    if (_shakeLegsLeft > 0) return;   // already shaking
-    if (_phase == MotionPhase::MOVING && _targetDeg == SERVO_POS_OUT) return;   // still rising
-
-    LOG_INFO("SERVO", "Flag: already up, shaking");
-    _shakeLegsLeft = 2 * FLAG_SHAKE_CYCLES;
-    _startShakeLeg();
+    _flagUp = true;
+    LOG_INFO("SERVO", "Flag: raising");
+    _beginMove(SERVO_POS_OUT, FLAG_MOVE_STEP_DEG, FLAG_MOVE_STEP_MS);
 }
 
 void servoControlUpdate() {
@@ -163,7 +141,6 @@ void servoControlUpdate() {
         LOG_WARN("SERVO", "Drive time exceeded, cutting the signal");
         servoControlDetach();
         _phase         = MotionPhase::IDLE;
-        _shakeLegsLeft = 0;
         return;
     }
 
@@ -188,15 +165,7 @@ void servoControlUpdate() {
 
     if (_posDeg != _targetDeg) return;
 
-    // Target reached: continue the shake sequence if one is running.
-    if (_shakeLegsLeft > 0) {
-        _shakeLegsLeft--;
-        if (_shakeLegsLeft > 0) {
-            _startShakeLeg();
-            return;
-        }
-    }
-
+    // Target reached: hold the signal briefly, then cut it.
     _phase         = MotionPhase::SETTLING;
     _settleStartMs = now;
 }
