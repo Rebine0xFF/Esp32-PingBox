@@ -87,6 +87,8 @@ https://lopaka.app/editor/37020/76664
 - Expansion Board Incident
 - Dual OLED on a Single I²C Bus
   --> visual bug, black lines
+- Network issues
+- Servo control issues
 
 ---
 
