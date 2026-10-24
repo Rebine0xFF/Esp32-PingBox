@@ -64,10 +64,14 @@ void loop() {
     if (buttonPowerPressed()) {
         LOG_INFO("MAIN", "Power button pressed, initiating shutdown sequence...");
 
-        // 0. TODO : Servo position reset
-        // servoControlSetPosition(SERVO_POS_IN)
-        // wait(1s) to end the movement
-        // servoControlDetach()
+        // 0. Bring the flag back down and let the move finish before cutting power.
+        servoFlagLower();
+        uint32_t servoWaitStartMs = millis();
+        while (servoControlIsBusy() && (millis() - servoWaitStartMs) < 3000) {
+            servoControlUpdate();
+            delay(1);
+        }
+        servoControlDetach();
         
         // 1. Turn off displays to prevent burn-in and save power
         screenMainSleep();
@@ -307,6 +311,7 @@ void loop() {
     }
     wifiManagerUpdate();
     timeManagerUpdate();
+    servoControlUpdate();
     // Flush a send that was queued while WiFi/NTP weren't ready yet.
     // Uses the current (now synced) time
     if (!_emergencyActive && _discordSendPending && wifiManagerIsConnected() && timeManagerIsSynced()) {
@@ -335,10 +340,14 @@ void loop() {
             char timeStr[6];
             timeManagerGetTimeString(timeStr, sizeof(timeStr));
             setLastAction(LastAction::APPROVED, timeStr);
+            servoFlagAcknowledged();
         }
     }
 
     if (!_emergencyActive && !menuIsActive() && buttonSendPressed()) {
+        // A new send (or an update after a pause) invalidates the previous
+        // acknowledgment: lower the flag and wait for a new one.
+        servoFlagLower();
         // Resending while paused is an update to the already-sent message,
         // rather than a brand new call.
         bool isUpdate = (_callState == LoopCallState::PAUSED);
